@@ -1,0 +1,2 @@
+my openoffice python macroses
+=============================

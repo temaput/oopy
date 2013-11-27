@@ -1,11 +1,12 @@
+#set encoding=utf-8
 """
 Learning to work with fields
 """
 
-import macrohelper
-basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT) # noqa
+from tema.oo import macrohelper
+basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT)
 
-from pythonize import wrapUnoContainer, UnoDateConverter
+from tema.oo.pythonize import wrapUnoContainer, UnoDateConverter
 
 
 def DisplayFields():
@@ -33,6 +34,22 @@ def ShowFieldMasters():
         msg += "*** {} ***\n".format(key)
         msg += "{} master contains {} dependants\n".format(field.Name, depCount)
     basic.MsgBox(msg, "Text field masters")
+
+fieldkey = lambda name: "com.sun.star.text.fieldmaster.User.{}".format(name)
+def ProcessContract():
+    """ first try to work with Art-tranzit contract"""
+    fmasters = wrapUnoContainer(basic.ThisComponent.getTextFieldMasters())
+    fk = fieldkey("DOCNUM")
+    docnum = fmasters[fk]
+
+    if docnum is not None:
+        basic.MsgBox("DOCNUM found")
+        docnum.Content = u"1453АБВABC"
+
+    frame   = basic.ThisComponent.CurrentController.Frame
+    dispatcher = basic.CreateUnoService("com.sun.star.frame.DispatchHelper")
+    from com.sun.star.beans import PropertyValue
+    dispatcher.executeDispatch(frame, ".uno:UpdateFields", "", 0, (PropertyValue(),))
 
 def InsertTextField():
     """ inserts several text fields """

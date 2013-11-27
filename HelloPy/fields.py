@@ -2,10 +2,10 @@
 Learning to work with fields
 """
 
-from tema.oo import macrohelper
-basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT)
+import macrohelper
+basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT) # noqa
 
-from tema.oo.pythonize import wrapUnoContainer, UnoDateConverter
+from pythonize import wrapUnoContainer, UnoDateConverter
 
 
 def DisplayFields():

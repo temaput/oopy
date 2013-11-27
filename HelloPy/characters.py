@@ -1,15 +1,12 @@
 """ working with character properties """
 
-
-
-
 import logging
 log = logging.getLogger(__name__)
 
-from tema.oo import macrohelper
+import macrohelper
 basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT)  # noqa
 
-from tema.oo.pythonize import wrapUnoContainer, UnoDateConverter
+from pythonize import wrapUnoContainer, UnoDateConverter
 
 doc = basic.ThisComponent
 text = doc.Text

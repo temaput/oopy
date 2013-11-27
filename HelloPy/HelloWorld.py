@@ -18,13 +18,11 @@
 #   the License at http://www.apache.org/licenses/LICENSE-2.0 .
 #
 
-from tema.oo import macrohelper
-basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT)
 
 def HelloWorldPython( ):
     """Prints the string 'Hello World(in Python)' into the current document"""
 #get the doc from the scripting context which is made available to all scripts
-    desktop = XSCRIPTCONTEXT.getDesktop()
+    desktop = XSCRIPTCONTEXT.getDesktop() # noqa
     model = desktop.getCurrentComponent()
 #check whether there's already an opened document. Otherwise, create a new one
     if not hasattr(model, "Text"):
@@ -35,7 +33,7 @@ def HelloWorldPython( ):
 #create an XTextRange at the end of the document
     tRange = text.End
 #and set the string
-    tRange.String = "Hello World (in Python)"
+    import sys
+    tRange.String = "\n".join(sys.path)
 
-    basic.MsgBox("test", "Hello World!")
     return None

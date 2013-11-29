@@ -1,5 +1,6 @@
+*.pyc
+__pycache__
 *.swp
-*/*.swp
-*/*.pyc
-*/.*
-*/__pycache__
+*.bak
+*.orig
+*.tmp

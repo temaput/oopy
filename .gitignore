@@ -4,3 +4,5 @@ __pycache__
 *.bak
 *.orig
 *.tmp
+*.log
+.DS_Store

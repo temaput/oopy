@@ -1,7 +1,6 @@
 """ Pythonic wrappers that translate JAVA-like interfaces to more pythonic
     analogs """
 
-import uno
 from com.sun.star.lang import IndexOutOfBoundsException
 
 
@@ -10,14 +9,18 @@ from com.sun.star.lang import IndexOutOfBoundsException
 # ---------------------------------------------------------------------------
 import sys
 
-def wrapUnoContainer(UnoContainter):
+
+def wrapUnoContainer(UnoContainter, desiredInterface=None):
     """ magic: picks the right convertor for any type of uno Containers"""
+    this = sys.modules[__name__]
     for t in UnoContainter.Types:
         branch, interface = t.typeName.split('.')[3:5]
         if branch == 'container':
-            this = sys.modules[__name__]
+            if desiredInterface is not None and \
+                    desiredInterface not in interface:
+                continue
             return this.__dict__[interface](UnoContainter)
-    raise (TypeError, "Bad uno container type")
+    raise TypeError("Bad uno container type")
 
 
 class XEnumerationAccess:
@@ -40,18 +43,32 @@ class XIndexAccess:
         self._object = Xobject
 
     def __getitem__(self, index):
-        return self._object.getByIndex(index)
+        try:
+            return self._object.getByIndex(index)
+        except IndexOutOfBoundsException as e:
+            raise IndexError(e)
+
+    def __len__(self):
+        return self._obect.getCount()
+
+
+class XIndexContainer(XIndexAccess):
+
+    def append(self, item):
+        self._object.inserByIndex(
+            len(self),
+            item)
 
     def __setitem__(self, index, item):
         try:
             self._object.replaceByIndex(index, item)
 
         except IndexOutOfBoundsException as e:
-            raise (IndexError, e)
+            raise IndexError(e)
 
 
 class XNameAccess(dict):
-    """translates com.sun.start.container.XIndexAccess to dict"""
+    """translates com.sun.start.container.XNameAccess to dict"""
 
     def __init__(self, Xobject):
         self._object = Xobject
@@ -60,7 +77,7 @@ class XNameAccess(dict):
         return self._object.getByName(key)
 
     def __setitem__(self, key, value):
-        self._object.setByName(key, value)
+        raise NotImplementedError("XNameAccess collection is immutable")
 
     def keys(self):
         return self._object.getElementNames()
@@ -78,13 +95,20 @@ class XNameAccess(dict):
         return[(key, self[key]) for key in self]
 
 
+class XNameContainer(XNameAccess):
+    def __setitem__(self, key, value):
+        if key not in self:
+            self._object.insertByName(key, value)
+        else:
+            self._object.replaceByName(key, value)
+
 # -------------------------------------------------
 #           date / time conversions
 # -------------------------------------------------
 from datetime import datetime
 from com.sun.star.util import Date as unoDate
 from com.sun.star.util import DateTime as unoDateTime
-from tema.utils import delegate
+from utils import delegate
 
 def _wrapspecials(result):
     if type(result) == datetime:
@@ -95,7 +119,7 @@ def _wrapspecials(result):
 @delegate(('__add__', '__radd__', '__sub__', '__rsub__'), _wrapspecials)
 class UnoDateConverter(datetime):
     """ Makes easy conversion between python datetime.datetime and
-    OO com.sun.star.util Date and DateTime 
+    OO com.sun.star.util Date and DateTime
 
     it wraps python native datetime:
     >>> UnoDateConverter.today().day == datetime.today().day
@@ -115,12 +139,12 @@ class UnoDateConverter(datetime):
     (com.sun.star.util.Date){ Day = (unsigned short)0x10, Month = (unsigned short)0xa, Year = (short)0x7dd }
     >>> UnoDateConverter(2013, 10, 16).getUnoDateTime()
     (com.sun.star.util.DateTime){ NanoSeconds = (unsigned long)0x0, Seconds = (unsigned short)0x0, Minutes = (unsigned short)0x0, Hours = (unsigned short)0x0, Day = (unsigned short)0x10, Month = (unsigned short)0xa, Year = (short)0x7dd, IsUTC = (boolean)false }
-    
+
     it can be created from existing datetime instance:
     >>> dt = datetime.today()
     >>> UnoDateConverter.fromDateTime(datetime(2013, 10, 16)).day
     16
-    
+
     it can be created from existing unoDate or unoDateTime aswell:
     >>> UnoDateConverter.fromUnoDate(unoDate(16, 10, 2013))
     UnoDateConverter(2013, 10, 16, 0, 0)

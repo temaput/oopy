@@ -1,13 +1,21 @@
 """
 Basic class implements global Constants and Functions in StarBasic
 Makes writing macroses with python more comfortable
-Takes XSCRIPTCONTEXT or ComponentContext to generate all other objects, so it can  be
-used inside macroses and from remote procs
-
+Takes XSCRIPTCONTEXT or ComponentContext to generate all other objects,
+so it can  be used inside macroses and from remote procs
 """
 
 import logging
-log = logging.getLogger(__name__)
+log = logging.getLogger("ooo_script_framework")
+log.setLevel(logging.DEBUG)
+fh = logging.FileHandler("macros.log")
+fh.setLevel(logging.DEBUG)
+formatter = logging.Formatter(logging.BASIC_FORMAT)
+fh.setFormatter(formatter)
+log.addHandler(fh)
+
+log.debug("logging from macrohelper works! __name__ = %s", __name__)
+
 import uno
 
 import dialogapi
@@ -27,7 +35,8 @@ class InputBox(dialogapi.unoDialog):
                 PositionX = 5, PositionY = 5, Width = 100, Height = 8)
         self.btnOK = self.insertButton('OK', 'OK', PositionX=100, PositionY=100,
                 Height=14, Width=40, DefaultButton=True)
-        
+
+
 class StarBasicGlobals:
     def __init__(self, context):
         self._givenctx = context
@@ -48,7 +57,7 @@ class StarBasicGlobals:
         self._ctx = self.GetDefaultContext()
         self.GetProcessServiceManager = self._ctx.getServiceManager
         self._smgr = self.GetProcessServiceManager()
-    
+
     def CreateUnoService(self, uri, *args):
         if len(args):
             return self._smgr.createInstanceWithArgumentsAndContext(uri,
@@ -68,7 +77,7 @@ class StarBasicGlobals:
         parent = self.StarDesktop.getCurrentFrame().getContainerWindow()
         inp = InputBox(self._ctx, self._smgr, parent, Title=title)
         inp.show()
-        
+
     def MsgBox(self, message, title="", message_type="infobox", buttons=1):
         """ Show message in message box. """
         parent = self.StarDesktop.getCurrentFrame().getContainerWindow()
@@ -81,10 +90,12 @@ class StarBasicGlobals:
             msgbox = toolkit.createMessageBox(
                 parent, Rectangle(), message_type, buttons, title, message)
         else:
-            message_type = uno.getConstantByName("com.sun.star.awt.MessageBoxType." + {
-                "messbox": "MESSAGEBOX", "infobox": "INFOBOX",
-                "warningbox": "WARNINGBOX", "errorbox": "ERRORBOX",
-                "querybox": "QUERYBOX"}[message_type])
+            from com.sun.star.awt.MessageBoxType import (
+                MESSAGEBOX, INFOBOX, WARNINGBOX, ERRORBOX, QUERYBOX)
+            message_type = {
+                "messbox": MESSAGEBOX, "infobox": INFOBOX,
+                "warningbox": WARNINGBOX, "errorbox": ERRORBOX,
+                "querybox": QUERYBOX}[message_type]
             msgbox = toolkit.createMessageBox(
                 parent, message_type, buttons, title, message)
         n = msgbox.execute()
@@ -103,4 +114,3 @@ class StarBasicGlobals:
         except:
             pass
         return False
-

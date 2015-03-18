@@ -24,17 +24,13 @@ def set_globals(ctx=None):
 from pythonize import wrapUnoContainer, UnoDateConverter
 
 from com.sun.star.text.ControlCharacter import (  # noqa
-    PARAGRAPH_BREAK,
-    LINE_BREAK,
-    HARD_HYPHEN,
-    SOFT_HYPHEN,
-    HARD_SPACE,
-    APPEND_PARAGRAPH)
+                                                PARAGRAPH_BREAK,
+                                                LINE_BREAK,
+                                                HARD_HYPHEN,
+                                                SOFT_HYPHEN,
+                                                HARD_SPACE,
+                                                APPEND_PARAGRAPH)
 
-
-class BaseUtilities:
-    def __init__(self, _doc):
-        self.doc = _doc
 
 
 appendText = lambda t: doc.Text.insertString(
@@ -52,103 +48,13 @@ def current_macro():
     log.debug("Contact!")
 
     iu = IndexUtilities(basic.ThisComponent)
-    iu.insertIndexMark(iu.indexMarkKeysFromString(
+    iu.insertMark(iu.markKeysFromString(
         "Индексное вхождение:Первый уровень:Второй уровень"))
+    msgl = []
+    for im in iu.getMarks():
+        msgl.append(iu.makeMarkPresentation(im))
+    basic.MsgBox("\n".join(msgl))
 
-
-class IndexUtilities(BaseUtilities):
-    """
-    Short routines for manipulating index marks in text
-    """
-    IndexMarkNS = "com.sun.star.text.DocumentIndexMark"
-    IndexMarkKeySeparator = ":"
-
-    def __init__(self, *args, **kwargs):
-        super(IndexUtilities, self).__init__(*args, **kwargs)
-        self.Cursor = CursorUtilities(self.doc)
-
-    def showIndexMarks(self):
-        """
-        adds special field ShowIndexMarks with value 1 at the begining of doc
-        """
-        pass
-
-    def indexMarkKeysFromString(self, indexMarkString):
-        return {k: v for (k, v) in zip(
-            ('AlternativeText', 'PrimaryKey', 'SecondaryKey'),
-            indexMarkString.split(self.IndexMarkKeySeparator)
-        )}
-
-    def insertIndexMark(self, indexMarkProperties):
-        """
-        inserts index mark at the current cursor position
-        sets properties from dct indexMarkProperties:
-        - AlternativeText
-        - PrimaryKey
-        - SecondaryKey
-        - IsMainEntry
-        """
-        indexMark = self.doc.createInstance(self.IndexMarkNS)
-        Properties.setFromDict(indexMark, indexMarkProperties)
-        self.doc.Text.insertTextContent(self.getInsertionPoint(),
-                                        indexMark, False)
-
-    def getInsertionPoint(self):
-        """
-        finds current cursor position to inser IndexMark to
-        """
-        return self.Cursor.getCurrentPosition()
-
-
-class StyleUtilities(BaseUtilities):
-    """
-    Some short elementary routines for working on styles
-    """
-
-    def docHasParaStyle(self, paraStyleName):
-        paraStyles = wrapUnoContainer(
-            self.doc.StyleFamilies.getByName("ParagraphStyles"), "XName")
-        return paraStyleName in paraStyles
-
-    def docHasCharStyle(self, charStyleName):
-        charStyles = wrapUnoContainer(
-            self.doc.StyleFamilies.getByName("CharacterStyles"), "XName")
-        return charStyleName in charStyles
-
-    def docHasFont(self, fontName):
-        """
-        We need to find available fonts from current controller
-        """
-        currentWindow = doc.getCurrentController(
-        ).getFrame().getContainerWindow()
-        for f in currentWindow.getFontDescriptors():
-            if f.Name == fontName:
-                return True
-        return False
-
-
-class CursorUtilities(BaseUtilities):
-    """
-    Work with view and text cursors
-    """
-
-    def getViewCursor(self):
-        return self.doc.CurrentController.getViewCursor()
-
-    def getCurrentPosition(self):
-        viewCursor = self.getViewCursor()
-        return viewCursor.getStart()
-
-
-class Properties:
-    """
-    Work with properties
-    """
-
-    @classmethod
-    def setFromDict(cls, obj, dct):
-        for k in dct:
-            obj.setPropertyValue(k, dct[k])
 
 
 def displayStyleProperties():
@@ -234,11 +140,11 @@ def removeFontRelief():
 
 
 """Working with cursors:
-    There are 2 type of cursors
-    viewCursor = the real visible cursor, that knows all about current
-    presentation of the text: pages, lines, screens ...
-    textCursor = unvisible cursor that handles inner structure of the
-    text, i.e. paragraphs, words, textparts...
+There are 2 type of cursors
+viewCursor = the real visible cursor, that knows all about current
+presentation of the text: pages, lines, screens ...
+textCursor = unvisible cursor that handles inner structure of the
+text, i.e. paragraphs, words, textparts...
 """
 
 
@@ -265,6 +171,7 @@ def countStatistics():
 """
 Learning to work with fields
 """
+
 
 def DisplayFields():
     """ displays fields from current doc """
@@ -326,8 +233,8 @@ def InsertTextField():
 
     doc.Text.insertControlCharacter(doc.Text.End, PARAGRAPH_BREAK, False)
     doc.Text.insertString(doc.Text.End, "А здесь текст по-русски, тоже из iPython. "
-            "Питон позволяет склеивать предложения в абзацы просто перенося "
-            "кавычки на следующую строку... Дальше будет аннотация.\n", False)
+                          "Питон позволяет склеивать предложения в абзацы просто перенося "
+                          "кавычки на следующую строку... Дальше будет аннотация.\n", False)
     anField = doc.createInstance("com.sun.star.text.TextField.Annotation")
 
     from datetime import timedelta
@@ -341,7 +248,6 @@ def InsertTextField():
 
 def InsertFieldMaster():
     doc = basic.ThisComponent
-    text = doc.Text
     branch = "com.sun.star.text.FieldMaster.User"
     name = "TestField"
     fullname = "{}.{}".format(branch, name)
@@ -386,7 +292,7 @@ def insertImageByURL(doc, url):
     img.Width = 6000
     img.Height = 8000
     img.AnchorType = unohelper.uno.getConstantByName(
-            "com.sun.star.text.TextContentAnchorType.AS_CHARACTER")
+        "com.sun.star.text.TextContentAnchorType.AS_CHARACTER")
 
     doc.Text.insertTextContent(cursor, img, False)
 

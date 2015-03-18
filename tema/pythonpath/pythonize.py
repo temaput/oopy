@@ -15,12 +15,12 @@ def wrapUnoContainer(UnoContainter, desiredInterface=None):
     this = sys.modules[__name__]
     for t in UnoContainter.Types:
         branch, interface = t.typeName.split('.')[3:5]
-        if branch == 'container':
+        if branch == 'container' and interface in this.__dict__:
             if desiredInterface is not None and \
                     desiredInterface not in interface:
                 continue
             return this.__dict__[interface](UnoContainter)
-    raise TypeError("Bad uno container type")
+    return (())
 
 
 class XEnumerationAccess:

@@ -33,7 +33,6 @@ class unoDialog(object):
         if properties:
             self.dialogModel.setPropertyValues(tuple(sorted(properties.keys())),
                     tuple(properties[k] for k in sorted(properties.keys())))
-        print ("MOTHERFUCK")
         log.debug("dialog is %s", dialog)
         self.construct(**kwargs)
 

@@ -14,3 +14,6 @@ smgr = ctx.ServiceManager
 
 # get the central desktop object
 desktop = smgr.createInstanceWithContext("com.sun.star.frame.Desktop", ctx)
+
+# access the current writer document
+doc = desktop.getCurrentComponent()

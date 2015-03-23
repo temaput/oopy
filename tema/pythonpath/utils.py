@@ -2,7 +2,7 @@
 some usefull funcs for instrumental"""
 
 import logging
-log = logging.getLogger(__name__)
+log = logging.getLogger("pyuno.utils")
 
 #
 # class decorators

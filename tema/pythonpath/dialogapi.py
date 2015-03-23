@@ -3,7 +3,7 @@
 """
 
 import logging
-log = logging.getLogger(__name__)
+log = logging.getLogger("pyuno.dialogapi")
 from uno import Enum
 
 getEnum = lambda branch, name: Enum("{}.{}".format(branch, name))

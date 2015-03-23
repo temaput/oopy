@@ -229,13 +229,7 @@ class IndexUtilities(BaseUtilities):
         marksRemoved = 0
         # if something is selected, look for all fields in selection
         if self.Cursor.isAnythingSelected():
-            if self.Cursor.isTableSelected():
-                selectionsIterator = (
-                    cell.Text.createTextCursorByRange(cell) for cell in
-                    self.Cursor.iterateTableCells())
-            else:
-                selectionsIterator = (self.Cursor.cursorFromSelection(),)
-            for selectionCursor in selectionsIterator:
+            for selectionCursor in self.Cursor.iterateSelections():
                 for textField in self.Fields.iterateTextFields(
                         selectionCursor):
                     # check that it is our field
@@ -322,14 +316,12 @@ class IndexUtilities(BaseUtilities):
         """
         if insertionPoint is None:
             insertionPoint = self.Cursor.getCurrentPosition()
-        cur = insertionPoint.Text.createTextCursorByRange(cur)
+        cur = insertionPoint.Text.createTextCursorByRange(insertionPoint)
         cur.Text.insertTextContent(cur,
                                    mark, False)
         if givePresentation:
             field = self.Fields.createHiddenTextField(
                 self.makeMarkPresentation(mark), varName=self.ShowMarksVarName)
-            log.debug("insertionPoint1 == insertionPoint2? %s",
-                      insertionPoint == insertionPoint1)
 
             cur.goLeft(1, False)
             cur.Text.insertTextContent(cur,
@@ -568,7 +560,11 @@ class CursorUtilities(BaseUtilities):
         selections = self.doc.getCurrentSelection()
         if selections is not None:
             if selections.supportsService(self.TableCursorNS):
-                pass
+                vc = self.getViewCursor()
+                tbl = vc.TextTable
+                cellRangeName = selections.RangeName
+                for cell in self.iterateTableCells(cellRangeName, tbl):
+                    yield cell.Text.createTextCursorByRange(cell)
             elif selections.supportsService(self.TextRangesNS):
                 for tr in wrapUnoContainer(selections):
                     yield tr.Text.createTextCursorByRange(tr)

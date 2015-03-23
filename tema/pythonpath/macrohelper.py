@@ -6,13 +6,12 @@ so it can  be used inside macroses and from remote procs
 """
 
 import logging
-log = logging.getLogger("ooo_script_framework")
-log.setLevel(logging.DEBUG)
-fh = logging.FileHandler("macros.log")
-fh.setLevel(logging.DEBUG)
-formatter = logging.Formatter(logging.BASIC_FORMAT)
-fh.setFormatter(formatter)
-log.addHandler(fh)
+log = logging.getLogger("pyuno.macrohelper")
+# fh = logging.FileHandler("/Users/artemputilov/tmp/macros.log")
+# fh.setLevel(logging.DEBUG)
+# formatter = logging.Formatter(logging.BASIC_FORMAT)
+# fh.setFormatter(formatter)
+# log.addHandler(logging.NullHandler())
 
 log.debug("logging from macrohelper works! __name__ = %s", __name__)
 

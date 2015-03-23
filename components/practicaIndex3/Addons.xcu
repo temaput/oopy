@@ -55,6 +55,21 @@
                             <value>_self</value>
                         </prop>
                     </node>
+                    <node oor:name="m4" oor:op="replace">
+                        <prop oor:name="URL" oor:type="xs:string">
+                            <value>org.openoffice.comp.pyuno.practica.Index:CountIndexMarks</value>
+                        </prop>
+                        <prop oor:name="ImageIdentifier" oor:type="xs:string">
+                            <value/>
+                        </prop>
+                        <prop oor:name="Title" oor:type="xs:string">
+                            <value/>
+                            <value xml:lang="en-US">Count index marks</value>
+                        </prop>
+                        <prop oor:name="Target" oor:type="xs:string">
+                            <value>_self</value>
+                        </prop>
+                    </node>
                 </node>
             </node>
         </node>

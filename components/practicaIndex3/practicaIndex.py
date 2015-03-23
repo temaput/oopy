@@ -147,6 +147,11 @@ class PracticaIndex(DialogAccessComponentHelper,
     def ToggleMarkPresentationsDispatch(self):
         self.iu.toggleMarks()
 
+    def CountIndexMarks(self):
+        di = self.doc.createInstance("com.sun.star.text.DocumentIndex")
+        marks = di.DocumentIndexMarks
+        self.Basic.MsgBox("%s" % len(marks))
+
 
 # pythonloader looks for a static g_ImplementationHelper variable
 g_ImplementationHelper = unohelper.ImplementationHelper()

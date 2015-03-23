@@ -45,15 +45,9 @@ def appendPara(t):
 
 
 def current_macro():
-    log.debug("Contact!")
-
-    iu = IndexUtilities(basic.ThisComponent)
-    iu.insertMark(iu.markKeysFromString(
-        "Индексное вхождение:Первый уровень:Второй уровень"))
-    msgl = []
-    for im in iu.getMarks():
-        msgl.append(iu.makeMarkPresentation(im))
-    basic.MsgBox("\n".join(msgl))
+    di = doc.createInstance("com.sun.star.text.DocumentIndex")
+    marks = di.DocumentIndexMarks
+    basic.MsgBox("%s" % len(marks))
 
 
 

@@ -62,6 +62,7 @@ class PracticaIndex(DialogAccessComponentHelper,
         """
         take the selection and put it to MarkString
         """
+        log.debug("preparing MarkString")
         if not self.cu.isAnythingSelected():
             cur = self.doc.Text.createTextCursorByRange(
                 self.cu.getCurrentPosition())
@@ -72,6 +73,7 @@ class PracticaIndex(DialogAccessComponentHelper,
                 cur.collapseToStart()
                 cur.gotoEndOfSentence(True)
 
+        log.debug("markSTring = %s", cur.String)
         self.appendMarkString(cur.String)
 
     def fillListBoxes(self):

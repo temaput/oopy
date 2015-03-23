@@ -24,8 +24,8 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import logging
 log = logging.getLogger("pyuno")
-log.addHandler(logging.StreamHandler())
-log.setLevel(logging.DEBUG)
+log.addHandler(logging.NullHandler())
+log.setLevel(logging.WARNING)
 
 
 import uno  # noqa
@@ -42,7 +42,7 @@ class PracticaIndex(DialogAccessComponentHelper,
                     ProtocolHandlerComponentHelper):
 
     ImplementationName = "org.openoffice.comp.pyuno.practica.Index"
-    InsertionDialogName = "vnd.sun.star.script:libPracticaDialogs.IndexMarkerInsertDialog?location=application"  # noqa
+    InsertionDialogName = "vnd.sun.star.script:libPracticaIndexBasic.IndexMarkerInsertDialog?location=application"  # noqa
 
     def __init__(self, ctx, *args, **kwargs):
         super(PracticaIndex, self).__init__(ctx, *args, **kwargs)
@@ -53,6 +53,8 @@ class PracticaIndex(DialogAccessComponentHelper,
         self.smgr = self.ctx.getServiceManager()
 
     def prepareDialog(self):
+        if self.iu.LastMarkNum is None:  # this is a major time consumer bug
+            self.iu.rebuildCache()
         self.fillListBoxes()
         self.fillMarkString()
 
@@ -128,13 +130,19 @@ class PracticaIndex(DialogAccessComponentHelper,
         """
         dispatch command to show form for inserting index mark
         """
-        self.createDialog(self.InsertionDialogName)
+        try:
+            self.createDialog(self.InsertionDialogName)
+        except writer.BadSelection:
+            self.Basic.MsgBox("Try another selection!")
         # me = self.smgr.createInstance(self.ImplementationName)
         # if me is not None:
         #     me.createDialog(self.InsertionDialogName)
 
     def IndexMarkRemoveDispatch(self):
-        self.iu.removeMarkHere()
+        try:
+            self.iu.removeMarkHere()
+        except writer.BadSelection:
+            self.Basic.MsgBox("Try another selection!")
 
     def ToggleMarkPresentationsDispatch(self):
         self.iu.toggleMarks()

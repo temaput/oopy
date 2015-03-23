@@ -23,8 +23,9 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 import logging
-log = logging.getLogger('console_macro_debug')
-import macrohelper
+log = logging.getLogger('pyuno.writer')
+
+import uno
 from pythonize import wrapUnoContainer
 
 from com.sun.star.text.ControlCharacter import (  # noqa
@@ -35,33 +36,9 @@ from com.sun.star.text.ControlCharacter import (  # noqa
                                                 HARD_SPACE,
                                                 APPEND_PARAGRAPH)
 
-basic = None
-current_doc = None
 
-if 'XSCRIPTCONTEXT' in globals():
-    basic = macrohelper.StarBasicGlobals(XSCRIPTCONTEXT)  # noqa
-    doc = basic.ThisComponent
-
-
-def set_globals(ctx=None):
-    global basic
-    global current_doc
-    if ctx is None and 'XSCRIPTCONTEXT' in globals():
-        ctx = XSCRIPTCONTEXT  # noqa
-    basic = macrohelper.StarBasicGlobals(ctx)
-    current_doc = basic.ThisComponent
-
-
-def current_macro():
-    log.debug("Contact!")
-
-    iu = IndexUtilities(basic.ThisComponent)
-    iu.insertMark(iu.markKeysFromString(
-        "Индексное вхождение:Первый уровень:Второй уровень"))
-    msgl = []
-    for im in iu.getMarks():
-        msgl.append(iu.makeMarkPresentation(im))
-    basic.MsgBox("\n".join(msgl))
+class BadSelection(ValueError):
+    pass
 
 
 class BaseUtilities:
@@ -117,14 +94,19 @@ class IndexUtilities(BaseUtilities):
     MarkPresentationMask = "{XE %s}"
     ShowMarksVarName = "showIndexMarks"
     MarkNumberBrackets = ("<", ">")
+    MarkPropertiesTemplate = {"AlternativeText": "",
+                              "PrimaryKey": "",
+                              "SecondaryKey": ""}
 
     def __init__(self, *args, **kwargs):
         super(IndexUtilities, self).__init__(*args, **kwargs)
         self.Cursor = CursorUtilities(self.doc)
         self.Fields = FieldUtilities(self.doc)
-        self.AlternativeTextList = []
-        self.PrimaryKeyList = []
-        self.SecondaryKeyList = []
+        self.FirstEntryList = self.AlternativeTextList = []
+        self.SecondEntryList = self.PrimaryKeyList = []
+        self.ThirdEntryList = self.SecondaryKeyList = []
+        self.LastMarkNum = None
+        self.MarkCacheDict = {}
 
     def iterMarks(self, rng):
         """
@@ -135,22 +117,27 @@ class IndexUtilities(BaseUtilities):
                 yield portion.DocumentIndexMark
 
     def keysFromString(self, markString):
-        return {k: v for (k, v) in zip(
+        markProperties = self.MarkPropertiesTemplate.copy()
+        markProperties.update({k: v for (k, v) in zip(
             self.MarkKeyNames,
             markString.split(self.MarkKeySeparator)
-        )}
+        )})
+        return markProperties
 
-    def keysToString(self, markProperties):
-        """
-        reverse of indexMarkKeysFromString
-        """
+    def keysToList(self, markProperties):
         markKeysList = []
         for k in self.MarkKeyNames:
             if k in markProperties:
                 keyField = markProperties[k]
                 if len(keyField):
                     markKeysList.append(keyField)
-        return ":".join(markKeysList)
+        return markKeysList
+
+    def keysToString(self, markProperties):
+        """
+        reverse of indexMarkKeysFromString
+        """
+        return self.MarkKeySeparator.join(self.keysToList(markProperties))
 
     def makeMarkPresentation(self, mark):
         """
@@ -165,25 +152,37 @@ class IndexUtilities(BaseUtilities):
         """
         Check for selection if it lies acros more than 1 paragraph mark range
         """
-        lastMarkNum = len(self.getMarks())
+        if self.LastMarkNum is None:
+            self.rebuildCache()
+
+        lastMarkNum = self.LastMarkNum
         sel = self.Cursor.cursorFromSelection()
         if self.Cursor.isInsideParagraph(sel):
             markString = "%s<%s>" % (markString, lastMarkNum)
             markProperties = self.keysFromString(markString)
-            self.insertMark(self.createMark(markProperties))
+            mark = self.createMark(markProperties)
+            self.insertMark(mark)
+            log.debug("mark inserted, LMN=%s", self.LastMarkNum)
+            self.addMarkToCache(mark, lastMarkNum)
+            self.addMarkKeysToCache(markProperties)
+            log.debug("cache updated")
+            self.LastMarkNum += 1
+            log.debug("cache updated, LMN=%s", self.LastMarkNum)
         else:
             # more than one paragraph selected
             sel = self.Cursor.forwards(sel)  # make left-to-right
             # Places 2 index marks at the start and end of textRange
-            markString1 = "%s+<%s>" % (markString, lastMarkNum)
-            markString2 = "%s=<%s>" % (markString, lastMarkNum+1)
-            self.insertMark(self.createMark(
-                self.keysFromString(markString1)),
-                sel.getStart())
-            self.insertMark(self.createMark(
-                self.keysFromString(markString2)),
-                sel.getEnd(),
-                False)
+            markProperties = self.keysFromString(markString)
+            self.addMarkKeysToCache(markProperties)
+            mark1 = self.createMark(
+                self.keysFromString("%s+<%s>" % (markString, lastMarkNum)))
+            mark2 = self.createMark(
+                self.keysFromString("%s=<%s>" % (markString, lastMarkNum + 1)))
+            self.insertMark(mark1, sel.getStart())
+            self.insertMark(mark2, sel.getEnd(), False)
+            self.addMarkToCache(mark1, lastMarkNum)
+            self.addMarkToCache(mark2, lastMarkNum + 1)
+            self.LastMarkNum += 2
 
     def stripMarkNumber(self, keyString):
         """
@@ -195,34 +194,51 @@ class IndexUtilities(BaseUtilities):
                 sepPosition = min(sepPosition, keyString.find(sep))
         return keyString[:sepPosition]
 
-    def cacheKeys(self):
-        for m in self.getMarks():
+    def addMarkToCache(self, mark, markNumber):
+        log.debug("Adding mark with number %s to cache %s",
+                  markNumber, self.MarkCacheDict)
+        self.MarkCacheDict[markNumber] = mark
+
+    def rebuildCache(self):
+        marks = self.getMarks()
+        self.LastMarkNum = len(marks)
+        for m in marks:
             markProperties = Properties.dctFromProperties(m)
-            for keyName in self.MarkKeyNames:
-                keyValue = self.stripMarkNumber(markProperties[keyName])
-                if keyValue:
-                    keyNameList = getattr(self, "%sList" % keyName)
-                    if keyValue not in keyNameList:
-                        keyNameList.append(keyValue)
+            self.addMarkKeysToCache(markProperties)
+            markKeysList = self.keysToList(markProperties)
+            markNumber = self.readMarkNumber(markKeysList)
+            self.addMarkToCache(m, markNumber)
+
+    def addMarkKeysToCache(self, markProperties):
+        for keyName in self.MarkKeyNames:
+            keyValue = self.stripMarkNumber(markProperties[keyName])
+            if keyValue:
+                keyNameList = getattr(self, "%sList" % keyName)
+                if keyValue not in keyNameList:
+                    keyNameList.append(keyValue)
 
     def removeMarkHere(self):
         """
         Check current selection for any presentations
         and get rid of them and their marks
         """
+        if self.LastMarkNum is None:
+            self.rebuildCache()
+
         marksRemoved = 0
         # if something is selected, look for all fields in selection
         if self.Cursor.isAnythingSelected():
             selectionCursor = self.Cursor.cursorFromSelection()
             for textField in self.Fields.iterateTextFields(selectionCursor):
                 # check that it is our field
-                # Dogtgtu
                 log.debug("Checking that %s is in %s", self.ShowMarksVarName,
                           textField.Condition)
                 if self.ShowMarksVarName in textField.Condition:
                     # find attached index mark
                     for mark in self.getAttachedIndexMarks(textField):
                         for m in self.getLinkedMarks(mark):
+                            log.debug("Marks removed %s, now remove %s",
+                                      marksRemoved, m)
                             marksRemoved += 1
                             self.doc.Text.removeTextContent(m)
                     # remove presentation aswell
@@ -247,23 +263,25 @@ class IndexUtilities(BaseUtilities):
         Inspects if it is a diapason marker
         returns tuple with mark and its opposite (if exist)
         """
-        markString = self.keysToString(Properties.dctFromProperties(mark))
+        markKeysList = self.keysToList(Properties.dctFromProperties(mark))
+        markString = markKeysList[-1]  # we only check the last element
         if '=' in markString or '+' in markString:
-            markNumber = self.readMarkNumber(markString)
+            markNumber = self.readMarkNumber(markKeysList)
             if markNumber is not None:
-                return (mark, self.getMarkByNumber(markNumber + 1))
+                mark2 = self.getMarkByNumber(markNumber + 1)
+                if mark2 is not None:
+                    return (mark, mark2)
         # this is single mark
         return (mark,)
 
     def getMarkByNumber(self, markNumber):
-        for m in self.getMarks():
-            markProperties = Properties.dctFromProperties(m)
-            markString = self.keysToString(markProperties)
-            mn = self.readMarkNumber(markString)
-            if mn == markNumber:
-                return m
+        log.debug("look for mark number %s in %s",
+                  markNumber, self.MarkCacheDict)
+        if markNumber in self.MarkCacheDict:
+            return self.MarkCacheDict[markNumber]
 
-    def readMarkNumber(self, markString):
+    def readMarkNumber(self, markKeysList):
+        markString = markKeysList[-1]  # we only look in last entry
         bracket1 = markString.find(self.MarkNumberBrackets[0]) + 1
         bracket2 = markString.find(self.MarkNumberBrackets[1])
         try:
@@ -315,6 +333,55 @@ class IndexUtilities(BaseUtilities):
         gets whole document index
         """
         return self.doc.createInstance(self.IndexNS)
+
+
+class IndexUtilities2(IndexUtilities):
+    """
+    Takes different approach to index mark keys
+    AlternativeText always contains last entry
+
+    AlternativeText
+    PrimaryKey:AlternativeText
+    PrimaryKey:SecondaryKey:AlternativeText
+    """
+
+    def keysFromString(self, markString):
+        markTuple = [k.strip() for k in
+                     markString.split(self.MarkKeySeparator)]
+        markKeys = self.MarkPropertiesTemplate.copy()
+        markKeys['AlternativeText'] = markTuple[-1]
+        if len(markTuple) > 1:
+            markKeys['PrimaryKey'] = markTuple[0]
+            if len(markTuple) > 2:
+                markKeys['SecondaryKey'] = markTuple[1]
+        return markKeys
+
+    def keysToList(self, markProperties):
+        markKeysList = [markProperties['AlternativeText']]
+        if len(markProperties['PrimaryKey']):
+            markKeysList.insert(0, markProperties['PrimaryKey'])
+            if len(markProperties['SecondaryKey']):
+                markKeysList.insert(1, markProperties['SecondaryKey'])
+        return markKeysList
+
+    def addMarkKeysToCache(self, markProperties):
+        log.debug("in iu2 addMarkKeysToCache")
+        markKeysList = self.keysToList(markProperties)
+        log.debug("adding mark keys to Cache: %s", markKeysList)
+        lastEntry = markKeysList[-1]
+        markKeysList[-1] = self.stripMarkNumber(lastEntry)
+
+        if markKeysList[0] not in self.FirstEntryList:
+            self.FirstEntryList.append(markKeysList[0])
+        if len(markKeysList) > 1 \
+                and markKeysList[1] not in self.SecondEntryList:
+            self.SecondEntryList.append(markKeysList[1])
+        if len(markKeysList) > 2 \
+                and markKeysList[2] not in self.ThirdEntryList:
+            self.ThirdEntryList.append(markKeysList[2])
+
+        log.debug("FirstEntryList len = %s", len(self.FirstEntryList))
+        log.debug("SecondEntryList len = %s", len(self.SecondEntryList))
 
 
 class FieldUtilities(BaseUtilities):
@@ -407,6 +474,8 @@ class CursorUtilities(BaseUtilities):
     Work with view and text cursors, selection and ranges
     """
 
+    TableCursorNS = "com.sun.star.text.XTextTableCursor"
+
     def getViewCursor(self):
         return self.doc.CurrentController.getViewCursor()
 
@@ -457,12 +526,18 @@ class CursorUtilities(BaseUtilities):
 
     def cursorFromSelection(self, selectionIndex=0):
         selections = self.doc.getCurrentSelection()
+        if uno.getTypeByName(
+                self.TableCursorNS) in selections.getTypes():
+            raise BadSelection("Cant work with TableCursor!")
         if selections.Count > selectionIndex:
             return self.doc.Text.createTextCursorByRange(
                 selections.getByIndex(selectionIndex))
 
     def isAnythingSelected(self):
         selections = self.doc.getCurrentSelection()
+        if uno.getTypeByName(
+                self.TableCursorNS) in selections.getTypes():
+            raise BadSelection("Cant work with TableCursor!")
         if selections.Count > 1:
             return True
         if selections.Count > 0:
@@ -491,7 +566,7 @@ class StyleUtilities(BaseUtilities):
         """
         We need to find available fonts from current controller
         """
-        currentWindow = doc.getCurrentController(
+        currentWindow = self.doc.getCurrentController(
         ).getFrame().getContainerWindow()
         for f in currentWindow.getFontDescriptors():
             if f.Name == fontName:

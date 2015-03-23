@@ -25,7 +25,6 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import logging
 log = logging.getLogger('pyuno.writer')
 
-import uno
 from pythonize import wrapUnoContainer
 
 from com.sun.star.text.ControlCharacter import (  # noqa
@@ -156,8 +155,7 @@ class IndexUtilities(BaseUtilities):
             self.rebuildCache()
 
         lastMarkNum = self.LastMarkNum
-        sel = self.Cursor.cursorFromSelection()
-        if self.Cursor.isInsideParagraph(sel):
+        if self.Cursor.isInsideParagraph() or self.Cursor.isInsideCell():
             markString = "%s<%s>" % (markString, lastMarkNum)
             markProperties = self.keysFromString(markString)
             mark = self.createMark(markProperties)
@@ -170,7 +168,9 @@ class IndexUtilities(BaseUtilities):
             log.debug("cache updated, LMN=%s", self.LastMarkNum)
         else:
             # more than one paragraph selected
-            sel = self.Cursor.forwards(sel)  # make left-to-right
+            selEdges = self.Cursor.getSelectionEdges()
+            if selEdges is None:
+                raise BadSelection("Please, select something else")
             # Places 2 index marks at the start and end of textRange
             markProperties = self.keysFromString(markString)
             self.addMarkKeysToCache(markProperties)
@@ -178,11 +178,12 @@ class IndexUtilities(BaseUtilities):
                 self.keysFromString("%s+<%s>" % (markString, lastMarkNum)))
             mark2 = self.createMark(
                 self.keysFromString("%s=<%s>" % (markString, lastMarkNum + 1)))
-            self.insertMark(mark1, sel.getStart())
-            self.insertMark(mark2, sel.getEnd(), False)
+            self.insertMark(mark1, selEdges[0])
+            self.insertMark(mark2, selEdges[1], False)
             self.addMarkToCache(mark1, lastMarkNum)
             self.addMarkToCache(mark2, lastMarkNum + 1)
             self.LastMarkNum += 2
+        self.doc.TextFields.refresh()
 
     def stripMarkNumber(self, keyString):
         """
@@ -228,25 +229,34 @@ class IndexUtilities(BaseUtilities):
         marksRemoved = 0
         # if something is selected, look for all fields in selection
         if self.Cursor.isAnythingSelected():
-            selectionCursor = self.Cursor.cursorFromSelection()
-            for textField in self.Fields.iterateTextFields(selectionCursor):
-                # check that it is our field
-                log.debug("Checking that %s is in %s", self.ShowMarksVarName,
-                          textField.Condition)
-                if self.ShowMarksVarName in textField.Condition:
-                    # find attached index mark
-                    for mark in self.getAttachedIndexMarks(textField):
-                        for m in self.getLinkedMarks(mark):
-                            log.debug("Marks removed %s, now remove %s",
-                                      marksRemoved, m)
-                            marksRemoved += 1
-                            self.doc.Text.removeTextContent(m)
-                    # remove presentation aswell
-                    self.doc.Text.removeTextContent(textField)
+            if self.Cursor.isTableSelected():
+                selectionsIterator = (
+                    cell.Text.createTextCursorByRange(cell) for cell in
+                    self.Cursor.iterateTableCells())
+            else:
+                selectionsIterator = (self.Cursor.cursorFromSelection(),)
+            for selectionCursor in selectionsIterator:
+                for textField in self.Fields.iterateTextFields(
+                        selectionCursor):
+                    # check that it is our field
+                    log.debug("Checking that %s is in %s",
+                              self.ShowMarksVarName,
+                              textField.Condition)
+                    if self.ShowMarksVarName in textField.Condition:
+                        # find attached index mark
+                        for mark in self.getAttachedIndexMarks(textField):
+                            for m in self.getLinkedMarks(mark):
+                                log.debug("Marks removed %s, now remove %s",
+                                          marksRemoved, m)
+                                marksRemoved += 1
+                                m.dispose()
+                        # remove presentation aswell
+                        textField.dispose()
         return marksRemoved
 
-    def getAttachedIndexMarks(self, presetationField):
-        cur = self.doc.Text.createTextCursorByRange(presetationField.Anchor)
+    def getAttachedIndexMarks(self, presentationField):
+        cur = presentationField.Anchor.Text.createTextCursorByRange(
+            presentationField.Anchor)
         cur.goRight(2, True)
         log.debug("Found index marks under cursor %s are %s", cur.String,
                   [im for im in self.iterMarks(cur)])
@@ -312,14 +322,18 @@ class IndexUtilities(BaseUtilities):
         """
         if insertionPoint is None:
             insertionPoint = self.Cursor.getCurrentPosition()
-        self.doc.Text.insertTextContent(insertionPoint,
-                                        mark, False)
+        cur = insertionPoint.Text.createTextCursorByRange(cur)
+        cur.Text.insertTextContent(cur,
+                                   mark, False)
         if givePresentation:
             field = self.Fields.createHiddenTextField(
                 self.makeMarkPresentation(mark), varName=self.ShowMarksVarName)
-            self.doc.Text.insertTextContent(insertionPoint,
-                                            field, False)
-            self.doc.TextFields.refresh()
+            log.debug("insertionPoint1 == insertionPoint2? %s",
+                      insertionPoint == insertionPoint1)
+
+            cur.goLeft(1, False)
+            cur.Text.insertTextContent(cur,
+                                       field, False)
 
     def getMarks(self):
         """
@@ -474,7 +488,9 @@ class CursorUtilities(BaseUtilities):
     Work with view and text cursors, selection and ranges
     """
 
-    TableCursorNS = "com.sun.star.text.XTextTableCursor"
+    TableCursorNS = "com.sun.star.text.TextTableCursor"
+    TextRangesNS = "com.sun.star.text.TextRanges"
+    TableRangeNameSplitter = ":"
 
     def getViewCursor(self):
         return self.doc.CurrentController.getViewCursor()
@@ -490,7 +506,7 @@ class CursorUtilities(BaseUtilities):
         return cursor
 
     def getEdge(self, rng, edge="left"):
-        cur = self.doc.Text.createTextCursorByRange(rng)
+        cur = rng.Text.createTextCursorByRange(rng)
         {"left": cur.collapseToStart, "right": cur.collapseToEnd}[edge]()
         return cur
 
@@ -502,48 +518,152 @@ class CursorUtilities(BaseUtilities):
         return self.createTextCursorByEdges(
             self.getEdge(rng, "right"), self.getEdge(rng))
 
+    def iterateTableCells(self, cellRangeName=None, tbl=None):
+        """
+        gets table obj and iterates within its cells
+        """
+        opened = False
+        closed = False
+        if tbl is None:
+            selections = self.doc.getCurrentSelection()
+            if selections is not None:
+                if selections.supportsService(self.TableCursorNS):
+                    vc = self.getViewCursor()
+                    tbl = vc.TextTable
+                    if cellRangeName is None:
+                        cellRangeName = selections.RangeName
+                elif selections.supportsService(self.TextRangesNS):
+                    sel = selections.getByIndex(0)
+                    tbl = sel.TextTable
+        if tbl is not None and cellRangeName is not None:
+            cellRange = cellRangeName.split(self.TableRangeNameSplitter)
+            if len(cellRange) == 1:
+                yield tbl.getCellByName(cellRange[0])
+            else:
+                for cellName in tbl.getCellNames():
+                    if cellName == cellRange[0]:
+                        opened = True
+                    if cellName == cellRange[1]:
+                        closed = True
+                    if opened and not closed:
+                        yield tbl.getCellByName(cellName)
+
     def iterateParagraphs(self, rng):
         return wrapUnoContainer(rng)
 
     def iterateTextPortions(self, rng):
-        for para in self.iterateParagraphs(rng):
+        if self.isInsideCell(rng):
+            enclosingRng = rng.Cell
+        else:
+            enclosingRng = rng
+        for para in self.iterateParagraphs(enclosingRng):
             for portion in wrapUnoContainer(para):
                 if self.isOverlaping(portion, rng):
                     yield portion
 
+    def iterateSelections(self):
+        """
+        iterates over selected fragments and returns iterator of textCursors
+        """
+        selections = self.doc.getCurrentSelection()
+        if selections is not None:
+            if selections.supportsService(self.TableCursorNS):
+                pass
+            elif selections.supportsService(self.TextRangesNS):
+                for tr in wrapUnoContainer(selections):
+                    yield tr.Text.createTextCursorByRange(tr)
+
     def isOverlaping(self, rng1, rng2):
-        for i in range(1):
-            rng1, rng2 = rng2, rng1
-            if self.doc.Text.compareRegionStarts(
-                    self.getEdge(rng1, "right"), self.getEdge(rng2)) < 1:
+        if rng1.Text == rng2.Text:  # only deal with the same texts
+            if rng1.Text.compareRegionStarts(rng1, rng2) < 0:
+                rng1, rng2 = rng2, rng1
+            # now we placed them in right order, lets compare end with start
+            if rng1.Text.compareRegionStarts(rng1.End, rng2) < 0:
+                return True
+            return False
+
+    def isInsideParagraph(self, rng=None):
+        if rng is None:
+            # get current selection
+            selections = self.doc.getCurrentSelection()
+            if selections is not None:
+                if selections.supportsService(self.TableCursorNS):
+                    return False
+                if selections.supportsService(self.TextRangesNS):
+                    rng = selections.getByIndex(0)
+        if rng is not None:
+            if self.isInsideCell(rng):  # cell is impossible to enum, bug
+                return True
+            enum = rng.createEnumeration()
+            enum.nextElement()
+            return not enum.hasMoreElements()
+        return False
+
+    def isTableSelected(self):
+        """
+        True if selection is TableCursor
+        """
+        selections = self.doc.getCurrentSelection()
+        if selections is not None:
+            if selections.supportsService(self.TableCursorNS):
                 return True
         return False
 
-    def isInsideParagraph(self, rng):
-        enum = rng.createEnumeration()
-        enum.nextElement()
-        return not enum.hasMoreElements()
+    def isInsideCell(self, rng=None):
+        if rng is None:
+            selections = self.doc.getCurrentSelection()
+            if selections is not None:
+                if selections.supportsService(self.TableCursorNS):
+                    return False  # selection is not IN cell
+                elif selections.supportsService(self.TextRangesNS):
+                    rng = selections.getByIndex(0)
+        if rng is not None:
+            return rng.Cell is not None
+        return False
+
+    def getSelectionEdges(self, selectionIndex=0):
+        """
+        returns (lhRange, rhRange)
+        works well with texttablecursor
+        """
+        selections = self.doc.getCurrentSelection()
+        if selections.supportsService(self.TableCursorNS):
+            # inside the table
+            vc = self.getViewCursor()
+            if vc.TextTable is not None:
+                cells = selections.RangeName.split(self.TableRangeNameSplitter)
+                if len(cells) > 1:  # more than one cell selected
+                    return (
+                        vc.TextTable.getCellByName(cells[0]).Start,
+                        vc.TextTable.getCellByName(cells[1]).End)
+                else:
+                    return(vc.TextTable.getCellByName(cells[0]).Start,
+                           vc.TextTable.getCellByName(cells[0]).End)
+        elif selections.supportsService(self.TextRangesNS):
+            # we have a normal text selections
+            if selections.Count > selectionIndex:
+                sel = selections.getByIndex(selectionIndex)
+                return (sel.Start, sel.End)
 
     def cursorFromSelection(self, selectionIndex=0):
         selections = self.doc.getCurrentSelection()
-        if uno.getTypeByName(
-                self.TableCursorNS) in selections.getTypes():
-            raise BadSelection("Cant work with TableCursor!")
-        if selections.Count > selectionIndex:
-            return self.doc.Text.createTextCursorByRange(
-                selections.getByIndex(selectionIndex))
+        if selections.supportsService(self.TextRangesNS):
+            if selections.Count > selectionIndex:
+                sel = selections.getByIndex(selectionIndex)
+                return sel.Text.createTextCursorByRange(
+                    selections.getByIndex(selectionIndex))
 
     def isAnythingSelected(self):
         selections = self.doc.getCurrentSelection()
-        if uno.getTypeByName(
-                self.TableCursorNS) in selections.getTypes():
-            raise BadSelection("Cant work with TableCursor!")
-        if selections.Count > 1:
-            return True
-        if selections.Count > 0:
-            selectionCursor = self.cursorFromSelection()
-            if not selectionCursor.isCollapsed():
+        if selections.supportsService(self.TableCursorNS):
+            return True  # Something is selected inside table
+        elif selections.supportsService(self.TextRangesNS):
+            if selections.Count > 1:
                 return True
+            if selections.Count > 0:
+                selectionCursor = self.cursorFromSelection()
+                if not selectionCursor.isCollapsed():
+                    return True
         return False
 
 

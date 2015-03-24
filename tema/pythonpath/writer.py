@@ -96,6 +96,10 @@ class IndexUtilities(BaseUtilities):
     MarkPropertiesTemplate = {"AlternativeText": "",
                               "PrimaryKey": "",
                               "SecondaryKey": ""}
+    RefCount = 0
+
+    def __del__(self):
+        log.debug("Remove instance of IndexUtilities")
 
     def __init__(self, *args, **kwargs):
         super(IndexUtilities, self).__init__(*args, **kwargs)
@@ -106,6 +110,12 @@ class IndexUtilities(BaseUtilities):
         self.ThirdEntryList = self.SecondaryKeyList = []
         self.LastMarkNum = None
         self.MarkCacheDict = {}
+        self.incrementRefCount()
+        log.debug("initializing %s instance of IndexUtitlities", self.RefCount)
+
+    @classmethod
+    def incrementRefCount(cls):
+        cls.RefCount += 1
 
     def iterMarks(self, rng):
         """
@@ -196,8 +206,7 @@ class IndexUtilities(BaseUtilities):
         return keyString[:sepPosition]
 
     def addMarkToCache(self, mark, markNumber):
-        log.debug("Adding mark with number %s to cache %s",
-                  markNumber, self.MarkCacheDict)
+        log.debug("add mark number %s to cache", markNumber)
         self.MarkCacheDict[markNumber] = mark
 
     def rebuildCache(self):
@@ -208,7 +217,9 @@ class IndexUtilities(BaseUtilities):
             self.addMarkKeysToCache(markProperties)
             markKeysList = self.keysToList(markProperties)
             markNumber = self.readMarkNumber(markKeysList)
-            self.addMarkToCache(m, markNumber)
+            if markNumber is not None:
+                self.LastMarkNum = max(self.LastMarkNum, markNumber)
+                self.addMarkToCache(m, markNumber)
 
     def addMarkKeysToCache(self, markProperties):
         for keyName in self.MarkKeyNames:
@@ -279,8 +290,8 @@ class IndexUtilities(BaseUtilities):
         return (mark,)
 
     def getMarkByNumber(self, markNumber):
-        log.debug("look for mark number %s in %s",
-                  markNumber, self.MarkCacheDict)
+        log.debug("is mark number %s in cache? %s",
+                  markNumber, markNumber in self.MarkCacheDict)
         if markNumber in self.MarkCacheDict:
             return self.MarkCacheDict[markNumber]
 
@@ -642,12 +653,13 @@ class CursorUtilities(BaseUtilities):
                 return (sel.Start, sel.End)
 
     def cursorFromSelection(self, selectionIndex=0):
-        selections = self.doc.getCurrentSelection()
-        if selections.supportsService(self.TextRangesNS):
-            if selections.Count > selectionIndex:
-                sel = selections.getByIndex(selectionIndex)
-                return sel.Text.createTextCursorByRange(
-                    selections.getByIndex(selectionIndex))
+        selectionIterator = self.iterateSelections()
+        for cursorCount in range(selectionIndex + 1):
+            try:
+                cursor = next(selectionIterator)
+            except StopIteration:
+                pass
+        return cursor
 
     def isAnythingSelected(self):
         selections = self.doc.getCurrentSelection()

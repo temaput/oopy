@@ -24,8 +24,8 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import logging
 log = logging.getLogger("pyuno")
-log.addHandler(logging.NullHandler())
-log.setLevel(logging.WARNING)
+log.addHandler(logging.StreamHandler())
+log.setLevel(logging.DEBUG)
 
 
 import uno  # noqa
@@ -63,15 +63,10 @@ class PracticaIndex(DialogAccessComponentHelper,
         take the selection and put it to MarkString
         """
         log.debug("preparing MarkString")
-        if not self.cu.isAnythingSelected():
-            cur = self.doc.Text.createTextCursorByRange(
-                self.cu.getCurrentPosition())
+        cur = self.cu.cursorFromSelection()
+        if not self.cu.isInsideParagraph(cur) or cur.isCollapsed():
+            cur.collapseToStart()
             cur.gotoEndOfSentence(True)
-        else:
-            cur = self.cu.cursorFromSelection()
-            if not self.cu.isInsideParagraph(cur):
-                cur.collapseToStart()
-                cur.gotoEndOfSentence(True)
 
         log.debug("markSTring = %s", cur.String)
         self.appendMarkString(cur.String)
@@ -141,6 +136,7 @@ class PracticaIndex(DialogAccessComponentHelper,
         #     me.createDialog(self.InsertionDialogName)
 
     def IndexMarkRemoveDispatch(self):
+        self.iu.rebuildCache()  # major performance bug!!!
         try:
             self.iu.removeMarkHere()
         except writer.BadSelection:

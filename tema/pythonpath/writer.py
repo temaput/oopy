@@ -50,13 +50,13 @@ class Properties:
     Work with properties
     """
 
-    @classmethod
-    def setFromDict(cls, obj, dct):
+    @staticmethod
+    def setFromDict(obj, dct):
         for k in dct:
             obj.setPropertyValue(k, dct[k])
 
-    @classmethod
-    def dctFromProperties(cls, obj):
+    @staticmethod
+    def dctFromProperties(obj):
         PropertySetInfo = obj.getPropertySetInfo()
         dct = {}
         for p in PropertySetInfo.Properties:
@@ -96,7 +96,17 @@ class IndexUtilities(BaseUtilities):
     MarkPropertiesTemplate = {"AlternativeText": "",
                               "PrimaryKey": "",
                               "SecondaryKey": ""}
+
+    # ========================================
+    # Class based cache
+    # ========================================
     RefCount = 0
+    FirstEntryList = []
+    SecondEntryList = []
+    ThirdEntryList = []
+    LastMarkNum = None
+    _doc = None
+    MarkCacheDict = {}
 
     def __del__(self):
         log.debug("Remove instance of IndexUtilities")
@@ -105,13 +115,10 @@ class IndexUtilities(BaseUtilities):
         super(IndexUtilities, self).__init__(*args, **kwargs)
         self.Cursor = CursorUtilities(self.doc)
         self.Fields = FieldUtilities(self.doc)
-        self.FirstEntryList = self.AlternativeTextList = []
-        self.SecondEntryList = self.PrimaryKeyList = []
-        self.ThirdEntryList = self.SecondaryKeyList = []
-        self.LastMarkNum = None
-        self.MarkCacheDict = {}
         self.incrementRefCount()
         log.debug("initializing %s instance of IndexUtitlities", self.RefCount)
+        if self.LastMarkNum is None or self.doc != self._doc:
+            self.rebuildCache(self.doc)
 
     @classmethod
     def incrementRefCount(cls):
@@ -125,28 +132,31 @@ class IndexUtilities(BaseUtilities):
             if portion.TextPortionType == "DocumentIndexMark":
                 yield portion.DocumentIndexMark
 
-    def keysFromString(self, markString):
-        markProperties = self.MarkPropertiesTemplate.copy()
+    @staticmethod
+    def keysFromString(markString):
+        markProperties = IndexUtilities.MarkPropertiesTemplate.copy()
         markProperties.update({k: v for (k, v) in zip(
-            self.MarkKeyNames,
-            markString.split(self.MarkKeySeparator)
+            IndexUtilities.MarkKeyNames,
+            markString.split(IndexUtilities.MarkKeySeparator)
         )})
         return markProperties
 
-    def keysToList(self, markProperties):
+    @staticmethod
+    def keysToList(markProperties):
         markKeysList = []
-        for k in self.MarkKeyNames:
+        for k in IndexUtilities.MarkKeyNames:
             if k in markProperties:
                 keyField = markProperties[k]
                 if len(keyField):
                     markKeysList.append(keyField)
         return markKeysList
 
-    def keysToString(self, markProperties):
+    @classmethod
+    def keysToString(cls, markProperties):
         """
         reverse of indexMarkKeysFromString
         """
-        return self.MarkKeySeparator.join(self.keysToList(markProperties))
+        return cls.MarkKeySeparator.join(cls.keysToList(markProperties))
 
     def makeMarkPresentation(self, mark):
         """
@@ -161,9 +171,6 @@ class IndexUtilities(BaseUtilities):
         """
         Check for selection if it lies acros more than 1 paragraph mark range
         """
-        if self.LastMarkNum is None:
-            self.rebuildCache()
-
         lastMarkNum = self.LastMarkNum
         if self.Cursor.isInsideParagraph() or self.Cursor.isInsideCell():
             markString = "%s<%s>" % (markString, lastMarkNum)
@@ -195,7 +202,8 @@ class IndexUtilities(BaseUtilities):
             self.LastMarkNum += 2
         self.doc.TextFields.refresh()
 
-    def stripMarkNumber(self, keyString):
+    @staticmethod
+    def stripMarkNumber(keyString):
         """
         remove =<123> or <123> or +<123> from the end of keyString
         """
@@ -205,37 +213,54 @@ class IndexUtilities(BaseUtilities):
                 sepPosition = min(sepPosition, keyString.find(sep))
         return keyString[:sepPosition]
 
-    def addMarkToCache(self, mark, markNumber):
+    @classmethod
+    def addMarkToCache(cls, mark, markNumber):
         log.debug("add mark number %s to cache", markNumber)
-        self.MarkCacheDict[markNumber] = mark
+        cls.MarkCacheDict[markNumber] = mark
 
-    def rebuildCache(self):
-        marks = self.getMarks()
-        self.LastMarkNum = len(marks)
+    @classmethod
+    def rebuildCache(cls, doc):
+        cls._doc = doc
+        cls.FirstEntryList = []
+        cls.SecondEntryList = []
+        cls.ThirdEntryList = []
+        cls.MarkCacheDict = {}
+        DocumentIndex = doc.createInstance(cls.IndexNS)
+        marks = DocumentIndex.DocumentIndexMarks
+        cls.LastMarkNum = len(marks)
         for m in marks:
             markProperties = Properties.dctFromProperties(m)
-            self.addMarkKeysToCache(markProperties)
-            markKeysList = self.keysToList(markProperties)
-            markNumber = self.readMarkNumber(markKeysList)
+            cls.addMarkKeysToCache(markProperties)
+            markKeysList = cls.keysToList(markProperties)
+            markNumber = cls.readMarkNumber(markKeysList)
             if markNumber is not None:
-                self.LastMarkNum = max(self.LastMarkNum, markNumber)
-                self.addMarkToCache(m, markNumber)
+                cls.LastMarkNum = max(cls.LastMarkNum, markNumber)
+                cls.addMarkToCache(m, markNumber)
 
-    def addMarkKeysToCache(self, markProperties):
-        for keyName in self.MarkKeyNames:
-            keyValue = self.stripMarkNumber(markProperties[keyName])
-            if keyValue:
-                keyNameList = getattr(self, "%sList" % keyName)
-                if keyValue not in keyNameList:
-                    keyNameList.append(keyValue)
+    @classmethod
+    def addMarkKeysToCache(cls, markProperties):
+        markKeysList = cls.keysToList(markProperties)
+        log.debug("adding mark keys to Cache: %s", markKeysList)
+        lastEntry = markKeysList[-1]
+        markKeysList[-1] = cls.stripMarkNumber(lastEntry)
+
+        if markKeysList[0] not in cls.FirstEntryList:
+            cls.FirstEntryList.append(markKeysList[0])
+        if len(markKeysList) > 1 \
+                and markKeysList[1] not in cls.SecondEntryList:
+            cls.SecondEntryList.append(markKeysList[1])
+        if len(markKeysList) > 2 \
+                and markKeysList[2] not in cls.ThirdEntryList:
+            cls.ThirdEntryList.append(markKeysList[2])
+
+        log.debug("FirstEntryList len = %s", len(cls.FirstEntryList))
+        log.debug("SecondEntryList len = %s", len(cls.SecondEntryList))
 
     def removeMarkHere(self):
         """
         Check current selection for any presentations
         and get rid of them and their marks
         """
-        if self.LastMarkNum is None:
-            self.rebuildCache()
 
         marksRemoved = 0
         # if something is selected, look for all fields in selection
@@ -295,10 +320,11 @@ class IndexUtilities(BaseUtilities):
         if markNumber in self.MarkCacheDict:
             return self.MarkCacheDict[markNumber]
 
-    def readMarkNumber(self, markKeysList):
+    @staticmethod
+    def readMarkNumber(markKeysList):
         markString = markKeysList[-1]  # we only look in last entry
-        bracket1 = markString.find(self.MarkNumberBrackets[0]) + 1
-        bracket2 = markString.find(self.MarkNumberBrackets[1])
+        bracket1 = markString.find(IndexUtilities.MarkNumberBrackets[0]) + 1
+        bracket2 = markString.find(IndexUtilities.MarkNumberBrackets[1])
         try:
             return(int(markString[bracket1:bracket2]))
         except ValueError:
@@ -362,10 +388,11 @@ class IndexUtilities2(IndexUtilities):
     PrimaryKey:SecondaryKey:AlternativeText
     """
 
-    def keysFromString(self, markString):
+    @classmethod
+    def keysFromString(cls, markString):
         markTuple = [k.strip() for k in
-                     markString.split(self.MarkKeySeparator)]
-        markKeys = self.MarkPropertiesTemplate.copy()
+                     markString.split(cls.MarkKeySeparator)]
+        markKeys = cls.MarkPropertiesTemplate.copy()
         markKeys['AlternativeText'] = markTuple[-1]
         if len(markTuple) > 1:
             markKeys['PrimaryKey'] = markTuple[0]
@@ -373,32 +400,14 @@ class IndexUtilities2(IndexUtilities):
                 markKeys['SecondaryKey'] = markTuple[1]
         return markKeys
 
-    def keysToList(self, markProperties):
+    @staticmethod
+    def keysToList(markProperties):
         markKeysList = [markProperties['AlternativeText']]
         if len(markProperties['PrimaryKey']):
             markKeysList.insert(0, markProperties['PrimaryKey'])
             if len(markProperties['SecondaryKey']):
                 markKeysList.insert(1, markProperties['SecondaryKey'])
         return markKeysList
-
-    def addMarkKeysToCache(self, markProperties):
-        log.debug("in iu2 addMarkKeysToCache")
-        markKeysList = self.keysToList(markProperties)
-        log.debug("adding mark keys to Cache: %s", markKeysList)
-        lastEntry = markKeysList[-1]
-        markKeysList[-1] = self.stripMarkNumber(lastEntry)
-
-        if markKeysList[0] not in self.FirstEntryList:
-            self.FirstEntryList.append(markKeysList[0])
-        if len(markKeysList) > 1 \
-                and markKeysList[1] not in self.SecondEntryList:
-            self.SecondEntryList.append(markKeysList[1])
-        if len(markKeysList) > 2 \
-                and markKeysList[2] not in self.ThirdEntryList:
-            self.ThirdEntryList.append(markKeysList[2])
-
-        log.debug("FirstEntryList len = %s", len(self.FirstEntryList))
-        log.debug("SecondEntryList len = %s", len(self.SecondEntryList))
 
 
 class FieldUtilities(BaseUtilities):

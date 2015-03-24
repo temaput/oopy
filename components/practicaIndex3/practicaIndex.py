@@ -53,8 +53,6 @@ class PracticaIndex(DialogAccessComponentHelper,
         self.smgr = self.ctx.getServiceManager()
 
     def prepareDialog(self):
-        if self.iu.LastMarkNum is None:  # this is a major time consumer bug
-            self.iu.rebuildCache()
         self.fillListBoxes()
         self.fillMarkString()
 
@@ -80,10 +78,10 @@ class PracticaIndex(DialogAccessComponentHelper,
             self.getPrimaryKeyList(), 0)
 
     def getAlternativeTextList(self):
-        return tuple(self.iu.AlternativeTextList)
+        return tuple(self.iu.FirstEntryList)
 
     def getPrimaryKeyList(self):
-        return tuple(self.iu.PrimaryKeyList)
+        return tuple(self.iu.SecondEntryList)
 
     def cleanMarkString(self):
         mstr = self.dialog.getControl("MarkString")
@@ -136,7 +134,6 @@ class PracticaIndex(DialogAccessComponentHelper,
         #     me.createDialog(self.InsertionDialogName)
 
     def IndexMarkRemoveDispatch(self):
-        self.iu.rebuildCache()  # major performance bug!!!
         try:
             self.iu.removeMarkHere()
         except writer.BadSelection:

@@ -24,8 +24,8 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import logging
 log = logging.getLogger("pyuno")
-log.addHandler(logging.StreamHandler())
-log.setLevel(logging.DEBUG)
+log.addHandler(logging.NullHandler())
+log.setLevel(logging.WARNING)
 
 
 import uno  # noqa
@@ -53,6 +53,8 @@ class PracticaIndex(DialogAccessComponentHelper,
         self.smgr = self.ctx.getServiceManager()
 
     def prepareDialog(self):
+        if self.iu.LastMarkNum is None:
+            self.iu.rebuildCache(self.doc)
         self.fillListBoxes()
         self.fillMarkString()
 

@@ -117,8 +117,8 @@ class IndexUtilities(BaseUtilities):
         self.Fields = FieldUtilities(self.doc)
         self.incrementRefCount()
         log.debug("initializing %s instance of IndexUtitlities", self.RefCount)
-        if self.LastMarkNum is None or self.doc != self._doc:
-            self.rebuildCache(self.doc)
+        if self._doc is not None and self.doc != self._doc:
+            self.resetCache()
 
     @classmethod
     def incrementRefCount(cls):
@@ -171,6 +171,8 @@ class IndexUtilities(BaseUtilities):
         """
         Check for selection if it lies acros more than 1 paragraph mark range
         """
+        if self.LastMarkNum is None:
+            self.rebuildCache(self.doc)
         lastMarkNum = self.LastMarkNum
         if self.Cursor.isInsideParagraph() or self.Cursor.isInsideCell():
             markString = "%s<%s>" % (markString, lastMarkNum)
@@ -219,15 +221,21 @@ class IndexUtilities(BaseUtilities):
         cls.MarkCacheDict[markNumber] = mark
 
     @classmethod
-    def rebuildCache(cls, doc):
-        cls._doc = doc
+    def resetCache(cls):
+        log.debug("reseting cache")
         cls.FirstEntryList = []
         cls.SecondEntryList = []
         cls.ThirdEntryList = []
         cls.MarkCacheDict = {}
+        cls.LastMarkNum = None
+        cls._doc = None
+
+    @classmethod
+    def rebuildCache(cls, doc):
         DocumentIndex = doc.createInstance(cls.IndexNS)
         marks = DocumentIndex.DocumentIndexMarks
         cls.LastMarkNum = len(marks)
+        cls._doc = doc
         for m in marks:
             markProperties = Properties.dctFromProperties(m)
             cls.addMarkKeysToCache(markProperties)
@@ -262,6 +270,8 @@ class IndexUtilities(BaseUtilities):
         and get rid of them and their marks
         """
 
+        if self.LastMarkNum is None:
+            self.rebuildCache(self.doc)
         marksRemoved = 0
         # if something is selected, look for all fields in selection
         if self.Cursor.isAnythingSelected():

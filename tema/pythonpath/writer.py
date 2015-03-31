@@ -36,6 +36,11 @@ from com.sun.star.text.ControlCharacter import (  # noqa
                                                 APPEND_PARAGRAPH)
 
 
+from macrohelper import colors
+
+from utils import Bunch
+
+
 class BadSelection(ValueError):
     pass
 
@@ -69,11 +74,38 @@ class TextUtilities(BaseUtilities):
     Work with text, paragraphs
     """
 
+    def insertTextAtRange(self, rng, t):
+        """
+        Inserts string at the start of rng
+        returns TextCursor enclosing inserted text
+        """
+        cur = rng.Text.createTextCursorByRange(rng)
+        cur.Text.insertString(
+            cur,
+            t,
+            True)
+        return cur
+
+    def insertParagraph(self, rng, t):
+        """
+        Inserts text and paragraph break at the Start of rng
+        returns textCursor enclosing inseted text
+        """
+        cur = self.insertTextAtRange(rng, t)
+        cur.Text.insertControlCharacter(
+            cur.End, PARAGRAPH_BREAK, False)
+        return cur
+
     def appendText(self, t):
         self.doc.Text.insertString(
             self.doc.Text.getEnd(),
             t,
             False)
+
+    def markRange(self, rng, color=None):
+        if color is None:
+            color = colors.yellow
+        rng.CharBackColor = color
 
     def appendPara(self, t):
         self.appendText(t)
@@ -97,6 +129,11 @@ class IndexUtilities(BaseUtilities):
                               "PrimaryKey": "",
                               "SecondaryKey": ""}
 
+    signs = Bunch(
+        diapasonOpening="+",
+        diapasonClosing="="
+    )
+    MaxLevels = 3  # maximal index depth
     # ========================================
     # Class based cache
     # ========================================
@@ -570,10 +607,16 @@ class CursorUtilities(BaseUtilities):
                     if opened and not closed:
                         yield tbl.getCellByName(cellName)
 
-    def iterateParagraphs(self, rng):
+    def iterateParagraphs(self, rng=None):
+        if rng is None:
+            # no range given iterate whole text
+            rng = self.doc.Text
         return wrapUnoContainer(rng)
 
-    def iterateTextPortions(self, rng):
+    def iterateTextPortions(self, rng=None):
+        if rng is None:
+            # no range given iterate whole text
+            rng = self.doc.Text
         if self.isInsideCell(rng):
             enclosingRng = rng.Cell
         else:
@@ -698,11 +741,28 @@ class StyleUtilities(BaseUtilities):
     """
     Some short elementary routines for working on styles
     """
+    ParagraphStyleNS = "com.sun.star.style.ParagraphStyle"
+    DefaultParaStyleName = "Standard"
 
     def docHasParaStyle(self, paraStyleName):
         paraStyles = wrapUnoContainer(
             self.doc.StyleFamilies.getByName("ParagraphStyles"), "XName")
         return paraStyleName in paraStyles
+
+    def createParaStyle(self, paraStyleName, styleProperties,
+                        ParentStyle=None):
+        family = wrapUnoContainer(
+            self.doc.StyleFamilies.getByName("ParagraphStyles"), "XName")
+        if ParentStyle is None or ParentStyle not in family:
+            ParentStyle = self.DefaultParaStyleName
+        if "FollowStyle" in styleProperties:
+            if styleProperties["FollowStyle"] not in family:
+                styleProperties["FollowStyle"] = self.DefaultParaStyleName
+        if paraStyleName not in family:
+            newStyle = self.doc.createInstance(self.ParagraphStyleNS)
+            newStyle.setParentStyle(ParentStyle)
+            Properties.setFromDict(newStyle, styleProperties)
+            family[paraStyleName] = newStyle
 
     def docHasCharStyle(self, charStyleName):
         charStyles = wrapUnoContainer(
@@ -719,3 +779,17 @@ class StyleUtilities(BaseUtilities):
             if f.Name == fontName:
                 return True
         return False
+
+
+class DocumentUtilities:
+    """
+    creating documents
+    """
+    NewDocumentNS = "private:factory/swriter"
+
+    def __init__(self, desktop):
+        self.desktop = desktop
+
+    def createDocument(self, docName=None):
+        return self.desktop.loadComponentFromURL(
+            self.NewDocumentNS, "_blank", 0, ())

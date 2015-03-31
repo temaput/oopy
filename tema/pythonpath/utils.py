@@ -9,7 +9,6 @@ log = logging.getLogger("pyuno.utils")
 #
 
 
-
 def delegate(methodnames, wrapper=None, attrname=None):
     """ decorates class with methods in methodnames
         methods are references to the same methods in
@@ -50,6 +49,10 @@ def delegate(methodnames, wrapper=None, attrname=None):
         return cls
     return class_decorator
 
+
+class Bunch:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
 
 
 #

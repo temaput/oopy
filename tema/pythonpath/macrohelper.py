@@ -20,6 +20,17 @@ import uno
 import dialogapi
 
 
+from utils import Bunch
+
+colors = Bunch(
+    yellow=0x00FFFF00,
+)
+
+chars = Bunch(
+    mdash="\u2014",
+)
+
+
 class InputBox(dialogapi.unoDialog):
 
     def setProperties(self, **kwargs):

@@ -131,9 +131,22 @@ class IndexMaker:
         for p in self.Cursor.iterateParagraphs():
             m = r.match(p.String)
             if m is not None:
-                match_line = MatchLine(*m.groups())
-                matches[match_line.counter] = match_line
+                mline = MatchLine(*m.groups())
+                lineHash = self.buildMlineHash(mline, mline.counter,
+                                               mline.diapasonMarker)
+                matches[lineHash] = mline
         return matches
+
+    @staticmethod
+    def buildMlineHash(mline, counter, diapasonMarker):
+        mlineHashList = [counter, mline.entry1]
+        for i in range(1, 3):
+            if mline[i] is not None:
+                mlineHashList.append(mline[i])
+        if diapasonMarker is not None:
+            mlineHashList.append(diapasonMarker)
+        lineHash = "".join(mlineHashList).upper().replace(" ", "")
+        return lineHash
 
     def parseMatches(self, matches):
         indexTree = {}
@@ -149,16 +162,16 @@ class IndexMaker:
             # check for diapason
             if mline.diapasonMarker is not None:
                 if mline.diapasonMarker == indexSigns.diapasonOpening:
-                    lookup = counter + 1
+                    lookupCounter = str(counter + 1)
                     lookupMarker = indexSigns.diapasonClosing
                     rangeList = [page, None]
                 else:
-                    lookup = counter - 1
+                    lookupCounter = str(counter - 1)
                     lookupMarker = indexSigns.diapasonOpening
                     rangeList = [None, page + 1]
-                lookup = str(lookup)
-                if (lookup in matches and
-                        matches[lookup].diapasonMarker == lookupMarker):
+                lookup = self.buildMlineHash(mline, lookupCounter,
+                                             lookupMarker)
+                if lookup in matches:
                     opposite_mline = matches.pop(lookup)
                     if rangeList[1] is None:
                         rangeList[1] = int(opposite_mline.page) + 1
@@ -167,7 +180,7 @@ class IndexMaker:
                     pageRange = tuple(range(*rangeList))
                 else:
                     # diapason closing entry not found
-                    log.warning("Closing marker not found with counter=%s",
+                    log.warning("Closing marker not found with lookup=%s",
                                 lookup)
             # fill the branch
             branch.pageSet.update(pageRange)

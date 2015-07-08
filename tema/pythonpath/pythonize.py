@@ -49,7 +49,7 @@ class XIndexAccess:
             raise IndexError(e)
 
     def __len__(self):
-        return self._obect.getCount()
+        return self._object.getCount()
 
 
 class XIndexContainer(XIndexAccess):
@@ -110,11 +110,13 @@ from com.sun.star.util import Date as unoDate
 from com.sun.star.util import DateTime as unoDateTime
 from utils import delegate
 
+
 def _wrapspecials(result):
     if type(result) == datetime:
         return UnoDateConverter.fromDateTime(result)
     else:
         return result
+
 
 @delegate(('__add__', '__radd__', '__sub__', '__rsub__'), _wrapspecials)
 class UnoDateConverter(datetime):

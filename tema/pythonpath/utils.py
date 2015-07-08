@@ -4,6 +4,23 @@ some usefull funcs for instrumental"""
 import logging
 log = logging.getLogger("pyuno.utils")
 
+from itertools import groupby
+
+#
+# tools
+#
+
+
+def range_creator(iterable):
+    """
+    1,2,3 5,7,8,9,10 --> (1,3), (5, 5), (7, 10)
+    """
+    for _, couplist in groupby(enumerate(iterable),
+                               lambda coup: coup[1] - coup[0]):
+        couplist = list(couplist)
+        yield couplist[0][1], couplist[-1][1]
+
+
 #
 # class decorators
 #

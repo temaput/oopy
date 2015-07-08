@@ -1,9 +1,13 @@
 """ working with bookmarks"""
 
 import logging
-log = logging.getLogger(__name__)
+log = logging.getLogger("pyuno")
+log.addHandler(logging.NullHandler())
+
+import hyphenate
 
 import macrohelper
+from macrohelper import measure_func
 basic = None
 doc = None
 
@@ -45,9 +49,14 @@ def appendPara(t):
 
 
 def current_macro():
-    di = doc.createInstance("com.sun.star.text.DocumentIndex")
-    marks = di.DocumentIndexMarks
-    basic.MsgBox("%s" % len(marks))
+    set_globals()
+    ctx = basic.GetDefaultContext()
+    from practica import VenturaPrepare
+    vp = VenturaPrepare(doc, ctx)
+    results = measure_func(vp)
+    s = ("Func: ventura prepare\nRealtime: %(real_seconds)s sec\n"
+         "Cputime: %(cpu_seconds)s sec")
+    basic.MsgBox(s % results)
 
 
 

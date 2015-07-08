@@ -27,7 +27,14 @@ colors = Bunch(
 )
 
 chars = Bunch(
+    nonbreaking_space_code=r"\u00A0",
+    nonbreaking_space="\u00A0",
+    soft_hyphen="\u00AD",
+    soft_hyphen_code=r"\u00AD",
+    ndash="\u2013",
+    ndash_code=r"\u2013",
     mdash="\u2014",
+    mdash_code=r"\u2014",
 )
 
 
@@ -124,3 +131,14 @@ class StarBasicGlobals:
         except:
             pass
         return False
+
+
+def measure_func(fn, *args, **kwargs):
+    import time
+    start_time = time.time()
+    start_cpu = time.clock()
+    fn(*args, **kwargs)
+    end_time = time.time()
+    end_cpu = time.clock()
+    return {'real_seconds': end_time - start_time,
+            'cpu_seconds': end_cpu - start_cpu}

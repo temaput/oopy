@@ -41,7 +41,7 @@ MaxLevels = writer.IndexUtilities.MaxLevels
 context = dict(
     entry="[^:=+{]+",
     diapasonMarker="(?P<diapasonMarker>[+=])",
-    counter="{(?P<counter>\d+)}",
+    counter="[<{](?P<counter>\d+)[>}]",
     page="(?P<pageNumber>\d+)"
 )
 template = (
@@ -106,30 +106,38 @@ class IndexMaker:
     MarginStep = 500
     StyleNames = ("i01", "i02", "i03")
 
-    def __init__(self, in_doc, out_doc):
+    def __init__(self, in_doc=None, out_doc=None):
         self.doc = in_doc
         self.output_document = out_doc
         self.Text = writer.TextUtilities(self.doc)
         self.Cursor = writer.CursorUtilities(self.doc)
         self.Styles = writer.StyleUtilities(self.output_document)
 
-    def createIndexStyles(self):
+    def createIndexStyles(self, target):
+        su = writer.StyleUtilities(target)
         for i in range(3):
-            self.Styles.createParaStyle(
+            su.createParaStyle(
                 self.StyleNames[i], {"ParaLeftMargin": self.MarginStep * i})
 
-    def markUnmatchedEntries(self):
+    def markUnmatchedEntries(self, source):
         i = 0
-        for p in self.Cursor.iterateParagraphs():
+        cu = writer.CursorUtilities(source)
+        for p in cu.iterateParagraphs():
             if len(p.String) and r.match(p.String) is None:
                 i += 1
                 self.Text.markRange(p, colors.yellow)
         return i
 
-    def collectMatches(self):
+    @staticmethod
+    def paragraphIterator(doc):
+        cu = writer.CursorUtilities(doc)
+        for p in cu.iterateParagraphs():
+            yield p.String
+
+    def collectMatches(self, iterator):
         matches = {}
-        for p in self.Cursor.iterateParagraphs():
-            m = r.match(p.String)
+        for p in iterator:
+            m = r.match(p)
             if m is not None:
                 mline = MatchLine(*m.groups())
                 lineHash = self.buildMlineHash(mline, mline.counter,
@@ -204,17 +212,32 @@ class IndexMaker:
             if len(branch.subLevelsDct):
                 self.printTreeToDoc(newPara, branch.subLevelsDct, level + 1)
 
-    def makeIndex(self):
-        unmatchedEntries = self.markUnmatchedEntries()
-        if unmatchedEntries > 0:
-            raise BadIndexEntries(
-                "There are %s unmatched entries" % unmatchedEntries
-            )
-        indexTree = self.parseMatches(self.collectMatches())
-        self.Text = writer.TextUtilities(self.output_document)
-        self.createIndexStyles()
-        self.printTreeToDoc(self.output_document.Text.Start,
-                            indexTree)
+    def makeIndex(self, source=None, target=None):
+        source = source or self.doc
+        target = target or self.output_document
+
+        if hasattr(source, "Text"):
+            iterator = self.paragraphIterator(source)
+        else:
+            iterator = source
+
+        if hasattr(source, "Text"):
+            unmatchedEntries = self.markUnmatchedEntries(source)
+            if unmatchedEntries > 0:
+                raise BadIndexEntries(
+                    "There are %s unmatched entries" % unmatchedEntries
+                )
+
+        if source is not None:
+            matches = self.collectMatches(iterator)
+            log.debug("matches len = %s", len(matches))
+            indexTree = self.parseMatches(matches)
+            if target is not None:
+                self.createIndexStyles(target)
+                self.printTreeToDoc(target.Text.End, indexTree)
+            else:
+                # debug output
+                self.printTree(indexTree)
 
     def getBranch(self, mline, branchDct, level=0):
         entry = mline[level]

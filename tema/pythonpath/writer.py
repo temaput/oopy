@@ -55,10 +55,45 @@ class Properties:
     Work with properties
     """
 
+    def __init__(self, obj):
+        psi = obj.getPropertySetInfo()
+        object.__setattr__(self, "psi", psi)
+        object.__setattr__(self, "obj", obj)
+
+    def __setattr__(self, key, value):
+        if self.psi.hasPropertyByName(key):
+            self.obj.setPropertyValue(key, value)
+        else:
+            raise AttributeError("No such property %s", key)
+
+    def __getattr__(self, key):
+        if self.psi.hasPropertyByName(key):
+            return self.obj.getPropertyValue(key)
+        else:
+            raise AttributeError("No such property %s", key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def __getitem__(self, key):
+        return getattr(self, key)
+
     @staticmethod
     def setFromDict(obj, dct):
         for k in dct:
             obj.setPropertyValue(k, dct[k])
+
+    @staticmethod
+    def propTupleFromDict(propDct):
+        """
+        Returns tuple of PropertyValue elements for setting as Attributes
+        """
+        from com.sun.star.beans import PropertyValue
+        propList = []
+        for k in propDct:
+            pv = PropertyValue(k, propDct[k])
+            propList.append(pv)
+        return tuple(propList)
 
     @staticmethod
     def dctFromProperties(obj):
@@ -122,9 +157,9 @@ class IndexUtilities(BaseUtilities):
     MarkNS = "com.sun.star.text.DocumentIndexMark"
     MarkKeySeparator = ":"
     MarkKeyNames = ('AlternativeText', 'PrimaryKey', 'SecondaryKey')
-    MarkPresentationMask = "{XE %s}"
+    MarkPresentationMask = "<XE %s>"
     ShowMarksVarName = "showIndexMarks"
-    MarkNumberBrackets = ("<", ">")
+    MarkNumberBrackets = ("{", "}")
     MarkPropertiesTemplate = {"AlternativeText": "",
                               "PrimaryKey": "",
                               "SecondaryKey": ""}
@@ -195,14 +230,32 @@ class IndexUtilities(BaseUtilities):
         """
         return cls.MarkKeySeparator.join(cls.keysToList(markProperties))
 
-    def makeMarkPresentation(self, mark):
+    def makeMarkPresentation(self, mark, mask=None):
         """
         Prepares mark presentation for hidden text field
         aka {"XE" Name:First key:SecondaryKey}
         """
+        mask = mask or self.MarkPresentationMask
         markProperties = Properties.dctFromProperties(mark)
-        return self.MarkPresentationMask % self.keysToString(
-            markProperties)
+        return mask % self.keysToString(markProperties)
+
+    def printIndex(self, targetDoc=None):
+        """
+        Collects all markEntries and creates Index tree from them
+        """
+        from indexmaker import IndexMaker
+        from io import StringIO
+        sio = StringIO()
+        presentationMask = "%s"
+        vcur = self.Cursor.getViewCursor()
+        for im in self.getMarks():
+            imtext = self.makeMarkPresentation(im, presentationMask)
+            vcur.gotoRange(im.Anchor, False)
+            page = vcur.Page
+            print("%s\t%s" % (imtext, page), file=sio)
+        sio.seek(0)
+        im = IndexMaker()
+        im.makeIndex(sio, targetDoc)
 
     def makeMarkHere(self, markString):
         """
@@ -212,7 +265,7 @@ class IndexUtilities(BaseUtilities):
             self.rebuildCache(self.doc)
         lastMarkNum = self.LastMarkNum
         if self.Cursor.isInsideParagraph() or self.Cursor.isInsideCell():
-            markString = "%s<%s>" % (markString, lastMarkNum)
+            markString = "%s{%s}" % (markString, lastMarkNum)
             markProperties = self.keysFromString(markString)
             mark = self.createMark(markProperties)
             self.insertMark(mark)
@@ -231,9 +284,9 @@ class IndexUtilities(BaseUtilities):
             markProperties = self.keysFromString(markString)
             self.addMarkKeysToCache(markProperties)
             mark1 = self.createMark(
-                self.keysFromString("%s+<%s>" % (markString, lastMarkNum)))
+                self.keysFromString("%s+{%s}" % (markString, lastMarkNum)))
             mark2 = self.createMark(
-                self.keysFromString("%s=<%s>" % (markString, lastMarkNum + 1)))
+                self.keysFromString("%s={%s}" % (markString, lastMarkNum + 1)))
             self.insertMark(mark1, selEdges[0])
             self.insertMark(mark2, selEdges[1], False)
             self.addMarkToCache(mark1, lastMarkNum)
@@ -244,10 +297,10 @@ class IndexUtilities(BaseUtilities):
     @staticmethod
     def stripMarkNumber(keyString):
         """
-        remove =<123> or <123> or +<123> from the end of keyString
+        remove ={123} or {123} or +{123} from the end of keyString
         """
         sepPosition = len(keyString)
-        for sep in ('+', '=', '<'):
+        for sep in ('+', '=', '{'):
             if sep in keyString:
                 sepPosition = min(sepPosition, keyString.find(sep))
         return keyString[:sepPosition]
@@ -549,6 +602,7 @@ class CursorUtilities(BaseUtilities):
 
     TableCursorNS = "com.sun.star.text.TextTableCursor"
     TextRangesNS = "com.sun.star.text.TextRanges"
+    TextTableNS = "com.sun.star.text.TextTable"
     TableRangeNameSplitter = ":"
 
     def getViewCursor(self):
@@ -583,47 +637,77 @@ class CursorUtilities(BaseUtilities):
         """
         opened = False
         closed = False
+        cellRange = None
         if tbl is None:
+            # no table given: get it from selection
             selections = self.doc.getCurrentSelection()
             if selections is not None:
                 if selections.supportsService(self.TableCursorNS):
+                    # several cells selected
                     vc = self.getViewCursor()
                     tbl = vc.TextTable
                     if cellRangeName is None:
                         cellRangeName = selections.RangeName
+                    for cell in self.iterateTableCells(cellRangeName, tbl):
+                        yield cell
                 elif selections.supportsService(self.TextRangesNS):
+                    # possibly cursor is inside the table
                     sel = selections.getByIndex(0)
                     tbl = sel.TextTable
-        if tbl is not None and cellRangeName is not None:
-            cellRange = cellRangeName.split(self.TableRangeNameSplitter)
-            if len(cellRange) == 1:
-                yield tbl.getCellByName(cellRange[0])
+                    if sel.Cell is not None:
+                        yield sel.Cell
+        else:
+            # tbl is given
+            if cellRangeName is not None:
+                cellRange = cellRangeName.split(self.TableRangeNameSplitter)
+                if len(cellRange) == 1:
+                    yield tbl.getCellByName(cellRange[0])
+                    closed = True
             else:
-                for cellName in tbl.getCellNames():
-                    if cellName == cellRange[0]:
-                        opened = True
-                    if cellName == cellRange[1]:
-                        closed = True
-                    if opened and not closed:
-                        yield tbl.getCellByName(cellName)
+                # no cellRange: iterate whole table
+                opened = True
+
+            for cellName in tbl.getCellNames():
+                if closed:
+                    break
+                if cellRange and cellName == cellRange[0]:
+                    opened = True
+                if cellRange and cellName == cellRange[1]:
+                    closed = True
+                if opened:
+                    yield tbl.getCellByName(cellName)
 
     def iterateParagraphs(self, rng=None):
         if rng is None:
             # no range given iterate whole text
             rng = self.doc.Text
-        return wrapUnoContainer(rng)
+        for para in wrapUnoContainer(rng):
+            if para.supportsService(self.TextTableNS):
+                # in table
+                for cell in self.iterateTableCells(tbl=para):
+                    for cellpara in wrapUnoContainer(cell.Text):
+                        yield cellpara
+            else:
+                yield para
+
+    def iterateTableTextPortions(self, tbl):
+        for cell in self.iterateTableCells(tbl=tbl):
+            for para in wrapUnoContainer(cell.Text):
+                for portion in wrapUnoContainer(para):
+                    yield portion
 
     def iterateTextPortions(self, rng=None):
         if rng is None:
-            # no range given iterate whole text
-            rng = self.doc.Text
-        if self.isInsideCell(rng):
-            enclosingRng = rng.Cell
+            enclosingRng = self.doc.Text
         else:
-            enclosingRng = rng
+            if self.isInsideCell(rng):
+                enclosingRng = rng.Cell
+            else:
+                enclosingRng = rng
+
         for para in self.iterateParagraphs(enclosingRng):
             for portion in wrapUnoContainer(para):
-                if self.isOverlaping(portion, rng):
+                if rng is None or self.isOverlaping(portion, rng):
                     yield portion
 
     def iterateSelections(self):
@@ -642,14 +726,15 @@ class CursorUtilities(BaseUtilities):
                 for tr in wrapUnoContainer(selections):
                     yield tr.Text.createTextCursorByRange(tr)
 
-    def isOverlaping(self, rng1, rng2):
+    @staticmethod
+    def isOverlaping(rng1, rng2):
         if rng1.Text == rng2.Text:  # only deal with the same texts
             if rng1.Text.compareRegionStarts(rng1, rng2) < 0:
                 rng1, rng2 = rng2, rng1
             # now we placed them in right order, lets compare end with start
             if rng1.Text.compareRegionStarts(rng1.End, rng2) < 0:
                 return True
-            return False
+        return False
 
     def isInsideParagraph(self, rng=None):
         if rng is None:
@@ -779,6 +864,66 @@ class StyleUtilities(BaseUtilities):
             if f.Name == fontName:
                 return True
         return False
+
+
+class FindReplaceUtilities:
+    """
+    Provides find/replace iteration routines
+    """
+
+    def __init__(self, doc, *args, **kwargs):
+        object.__setattr__(self, 'doc', doc)
+        self.createDescriptor()
+        if args:
+            self.descriptor.update(args[0])
+
+    def __setattr__(self, key, value):
+        setattr(self.descriptor, key, value)
+
+    def __getattr__(self, key):
+        return getattr(self.descriptor, key)
+
+    def createDescriptor(self):
+        descriptor = Properties(self.doc.createSearchDescriptor())
+        object.__setattr__(self, 'descriptor', descriptor)
+
+    def _iterFromStart(self, descriptor):
+        found = self.doc.findFirst(descriptor)
+        while(found is not None):
+            yield found
+            found = self.doc.findNext(found.End, descriptor)
+
+    def _iterInRange(self, descriptor, rng):
+        curStart = rng.Text.createTextCursorByRange(rng)
+        curStart.collapseToStart()
+        found = self.doc.findNext(curStart, descriptor)
+        while(found is not None):
+            if CursorUtilities.isOverlaping(found, rng):
+                yield found
+                found = self.doc.findNext(found.End, descriptor)
+            else:
+                break
+
+    def __call__(self, SearchString, ReplaceString=None, **kwargs):
+        descriptor = self.descriptor.obj
+        descriptor.SearchString = SearchString
+        if ReplaceString is not None:
+            descriptor.ReplaceString = ReplaceString
+            return self.doc.replaceAll(descriptor)
+        elif 'searchAll' in kwargs:
+            return wrapUnoContainer(self.doc.findAll(descriptor))
+        elif 'searchRange' in kwargs:
+            return self._iterInRange(descriptor, kwargs['searchRange'])
+        else:
+            return self._iterFromStart(descriptor)
+
+    def setSearchAttributes(self, attrDct):
+        self.descriptor.setSearchAttributes(
+            Properties.propTupleFromDict(attrDct))
+
+    def setReplaceAttributes(self, attrDct):
+        self.descriptor.setReplaceAttributes(
+            Properties.propTupleFromDict(attrDct))
 
 
 class DocumentUtilities:

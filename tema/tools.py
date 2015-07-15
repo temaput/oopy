@@ -47,3 +47,18 @@ def convert_index_markers():
     from practica import VenturaPrepare
     vp = VenturaPrepare(doc, ctx)
     vp.convert_index_markers()
+
+
+def freq_report():
+    """
+    Create frequency report
+    """
+    from freq import freq_report
+    sourcedoc = basic.macro_create_doc("writer")
+    freq_report(basic.ThisComponent, sourcedoc)
+    basic.MsgBox("Done!")
+
+__all__ = (prepare_for_ventura,
+           convert_index_markers,
+           freq_report,
+           )

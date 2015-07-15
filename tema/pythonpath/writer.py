@@ -25,6 +25,8 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import logging
 log = logging.getLogger('pyuno.writer')
 
+import re
+
 from pythonize import wrapUnoContainer
 
 from com.sun.star.text.ControlCharacter import (  # noqa
@@ -64,13 +66,13 @@ class Properties:
         if self.psi.hasPropertyByName(key):
             self.obj.setPropertyValue(key, value)
         else:
-            raise AttributeError("No such property %s", key)
+            raise AttributeError("No such property %s" % key)
 
     def __getattr__(self, key):
         if self.psi.hasPropertyByName(key):
             return self.obj.getPropertyValue(key)
         else:
-            raise AttributeError("No such property %s", key)
+            raise AttributeError("No such property %s" % key)
 
     def __setitem__(self, key, value):
         setattr(self, key, value)
@@ -91,7 +93,9 @@ class Properties:
         from com.sun.star.beans import PropertyValue
         propList = []
         for k in propDct:
-            pv = PropertyValue(k, propDct[k])
+            pv = PropertyValue()
+            pv.Name = k
+            pv.Value = propDct[k]
             propList.append(pv)
         return tuple(propList)
 
@@ -196,6 +200,12 @@ class IndexUtilities(BaseUtilities):
     def incrementRefCount(cls):
         cls.RefCount += 1
 
+    def iterPresentationFields(self, rng=None):
+        for tf in self.Fields.iterateTextFields(rng):
+            if self.Fields.isHiddenTextField(tf) and\
+                    self.ShowMarksVarName in tf.Condition:
+                yield tf
+
     def iterMarks(self, rng):
         """
         iterate over indexMarks in range
@@ -203,6 +213,32 @@ class IndexUtilities(BaseUtilities):
         for portion in self.Cursor.iterateTextPortions(rng):
             if portion.TextPortionType == "DocumentIndexMark":
                 yield portion.DocumentIndexMark
+
+    def killPresentationFields(self):
+        fields_killed = 0
+        for tf in self.iterPresentationFields():
+            fields_killed += 1
+            tf.dispose()
+        return fields_killed
+
+    def rebuildPresentationFields(self):
+        self.killPresentationFields()
+        processed_marks = []
+        for m in self.getMarks():
+            mark = self.getLinkedMarks(m)[0]
+            if mark not in processed_marks:
+                self.givePresentation(mark)
+                processed_marks.append(mark)
+        return len(processed_marks)
+
+    def convert_old_index_markers(self):
+        """
+        convert bad im entries (index number like <111>) to
+        good (index number like {111}
+        """
+        for im in self.getMarks():
+            at = im.AlternativeText
+            im.AlternativeText = at.translate(str.maketrans("<>", "{}"))
 
     @staticmethod
     def keysFromString(markString):
@@ -366,51 +402,81 @@ class IndexUtilities(BaseUtilities):
         # if something is selected, look for all fields in selection
         if self.Cursor.isAnythingSelected():
             for selectionCursor in self.Cursor.iterateSelections():
-                for textField in self.Fields.iterateTextFields(
-                        selectionCursor):
+                for textField in self.iterPresentationFields(selectionCursor):
                     # check that it is our field
                     log.debug("Checking that %s is in %s",
                               self.ShowMarksVarName,
                               textField.Condition)
-                    if self.ShowMarksVarName in textField.Condition:
-                        # find attached index mark
-                        for mark in self.getAttachedIndexMarks(textField):
+                    # find attached index mark
+                    markKeys = self.parsePresentationField(textField)
+                    if markKeys is not None:
+                        markNumber = self.readMarkNumber(
+                            self.keysToList(markKeys))
+                        mark = self.getMarkByNumber(markNumber)
+                        if mark is not None:
                             for m in self.getLinkedMarks(mark):
-                                log.debug("Marks removed %s, now remove %s",
-                                          marksRemoved, m)
                                 marksRemoved += 1
                                 m.dispose()
-                        # remove presentation aswell
-                        textField.dispose()
+                    # remove presentation aswell
+                    textField.dispose()
         return marksRemoved
 
-    def getAttachedIndexMarks(self, presentationField):
-        cur = presentationField.Anchor.Text.createTextCursorByRange(
+    def getAttachedIndexMark(self, presentationField):
+        markNumber = None
+        markKeys = self.parsePresentationField(presentationField)
+        if markKeys is not None:
+            markNumber = self.readMarkNumber(markKeys)
+        cur = self.Cursor.createTextCursorByANYRage(
             presentationField.Anchor)
-        cur.goRight(2, True)
-        log.debug("Found index marks under cursor %s are %s", cur.String,
-                  [im for im in self.iterMarks(cur)])
-        return self.iterMarks(cur)
+        cur.gotoEndOfSentence(True)
+        nearbyMarks = tuple(self.iterMarks(cur))
+        if nearbyMarks and markNumber is None:
+            return nearbyMarks[0]
+        else:
+            for mark in nearbyMarks:
+                if markNumber == self.getMarkNumber(mark):
+                    return mark
 
-    def getAttachedPresentationFields(self, mark):
+    def getAttachedPresentationField(self, mark):
         """
         travel cursor backwards to find the closest presentation field
         """
-        pass
+        mark = self.getLinkedMarks(mark)[0]  # always look for first mark
+        markNumber = self.getMarkNumber(mark)
+        cur = self.Cursor.createTextCursorByANYRage(mark.Anchor)
+        cur.gotoStartOfSentence(True)
+        for tf in self.Fields.iterateTextFields(cur):
+            _markKeys = self.parsePresentationField(tf)
+            if _markKeys is not None:
+                _markNumber = self.readMarkNumber(_markKeys)
+                if markNumber == _markNumber:
+                    return tf
+
+    def getMarkKeys(self, mark):
+        return self.keysToList(Properties.dctFromProperties(mark))
+
+    def getMarkNumber(self, mark):
+        return self.readMarkNumber(self.getMarkKeys(mark))
 
     def getLinkedMarks(self, mark):
         """
         Inspects if it is a diapason marker
         returns tuple with mark and its opposite (if exist)
         """
-        markKeysList = self.keysToList(Properties.dctFromProperties(mark))
+        markKeysList = self.getMarkKeys(mark)
         markString = markKeysList[-1]  # we only check the last element
         if '=' in markString or '+' in markString:
             markNumber = self.readMarkNumber(markKeysList)
             if markNumber is not None:
-                mark2 = self.getMarkByNumber(markNumber + 1)
-                if mark2 is not None:
-                    return (mark, mark2)
+                oppositeMarkNumber = markNumber + 1 if '+' in markString \
+                    else markNumber - 1
+                if oppositeMarkNumber > 0:
+                    mark2 = self.getMarkByNumber(oppositeMarkNumber)
+                    if mark2 is not None:
+                        if markNumber < oppositeMarkNumber:
+                            return (mark, mark2)
+                        else:
+                            return (mark2, mark)
         # this is single mark
         return (mark,)
 
@@ -419,6 +485,15 @@ class IndexUtilities(BaseUtilities):
                   markNumber, markNumber in self.MarkCacheDict)
         if markNumber in self.MarkCacheDict:
             return self.MarkCacheDict[markNumber]
+
+    def parsePresentationField(self, presentationField, presentationMask=None):
+        presentationMask = presentationMask or self.MarkPresentationMask
+        regexp = presentationMask.replace("%s", "(?P<markString>.*)")
+        m = re.search(regexp, presentationField.Anchor.String)
+        if m is not None:
+            markString = m.group("markString")
+            if markString is not None:
+                return self.keysFromString(markString)
 
     @staticmethod
     def readMarkNumber(markKeysList):
@@ -457,12 +532,17 @@ class IndexUtilities(BaseUtilities):
         cur.Text.insertTextContent(cur,
                                    mark, False)
         if givePresentation:
+            self.givePresentation(mark, cur)
+
+    def givePresentation(self, mark, cur=None):
             field = self.Fields.createHiddenTextField(
                 self.makeMarkPresentation(mark), varName=self.ShowMarksVarName)
 
+            if cur is None:
+                cur = self.Cursor.createTextCursorByANYRage(
+                    mark.Anchor)
             cur.goLeft(1, False)
-            cur.Text.insertTextContent(cur,
-                                       field, False)
+            cur.Text.insertTextContent(cur, field, False)
 
     def getMarks(self):
         """
@@ -528,7 +608,7 @@ class FieldUtilities(BaseUtilities):
         self.VAR = VAR
         self.Cursor = CursorUtilities(self.doc)
 
-    def iterateTextFields(self, rng):
+    def iterateTextFields(self, rng=None):
         """
         Iterate text fields in rng
         """
@@ -587,6 +667,13 @@ class FieldUtilities(BaseUtilities):
             self.doc.Text.getStart(), dependant, False)
         self.doc.TextFields.refresh()
 
+    def isTypeOfField(self, textField, textFieldType):
+        branch = "%s.%s" % (self.TextFieldNS, textFieldType)
+        return textField.supportsService(branch)
+
+    def isHiddenTextField(self, textField):
+        return self.isTypeOfField(textField, "HiddenText")
+
     def createHiddenTextField(self,
                               Content, Condition=None, varName="showHidden"):
         Condition = Condition or "%s != 1" % varName
@@ -612,6 +699,7 @@ class CursorUtilities(BaseUtilities):
         viewCursor = self.getViewCursor()
         return viewCursor.getStart()
 
+    """
     def createTextCursorByEdges(self, startRange, endRange):
         cursor = self.doc.Text.createTextCursor()
         cursor.gotoRange(startRange, False)
@@ -630,6 +718,12 @@ class CursorUtilities(BaseUtilities):
     def backwards(self, rng):
         return self.createTextCursorByEdges(
             self.getEdge(rng, "right"), self.getEdge(rng))
+    """
+
+    def createTextCursorByANYRage(self, rng):
+        if rng.Cell is not None:
+            return rng.Cell.Text.createTextCursorByRange(rng)
+        return rng.Text.createTextCursorByRange(rng)
 
     def iterateTableCells(self, cellRangeName=None, tbl=None):
         """
@@ -869,6 +963,34 @@ class StyleUtilities(BaseUtilities):
 class FindReplaceUtilities:
     """
     Provides find/replace iteration routines
+    boolean     SearchBackwards If TRUE, the search is done backwards in the
+document. More...
+
+    boolean     SearchCaseSensitive If TRUE, the case of the letters is
+important for the match. More...
+
+    boolean     SearchWords If TRUE, only complete words will be found. More...
+
+    boolean     SearchRegularExpression If TRUE, the search string is evaluated
+as a regular expression. More...
+
+    boolean     SearchStyles If TRUE, it is searched for positions where the
+paragraph style with the name of the search pattern is applied. More...
+
+    boolean     SearchSimilarity If TRUE, a "similarity search" is performed.
+More...
+
+    boolean     SearchSimilarityRelax If TRUE, all similarity rules are applied
+together. More...
+
+    short   SearchSimilarityRemove This property specifies the number of
+characters that may be ignored to match the search pattern. More...
+
+    short   SearchSimilarityAdd specifies the number of characters that must be
+added to match the search pattern. More...
+
+    short   SearchSimilarityExchange This property specifies the number of
+characters that must be replaced to match the search pattern. More...
     """
 
     def __init__(self, doc, *args, **kwargs):
@@ -918,11 +1040,17 @@ class FindReplaceUtilities:
             return self._iterFromStart(descriptor)
 
     def setSearchAttributes(self, attrDct):
-        self.descriptor.setSearchAttributes(
+        """ Set additional search attributes as dict
+            can go with CharacterProperties and ParagraphProperties
+        """
+        self.descriptor.obj.setSearchAttributes(
             Properties.propTupleFromDict(attrDct))
 
     def setReplaceAttributes(self, attrDct):
-        self.descriptor.setReplaceAttributes(
+        """ Set additional replace attributes as dict
+            can go with CharacterProperties and ParagraphProperties
+        """
+        self.descriptor.obj.setReplaceAttributes(
             Properties.propTupleFromDict(attrDct))
 
 
@@ -938,3 +1066,10 @@ class DocumentUtilities:
     def createDocument(self, docName=None):
         return self.desktop.loadComponentFromURL(
             self.NewDocumentNS, "_blank", 0, ())
+
+
+class BookmarkUtilities(BaseUtilities):
+
+    def getBookmarksDict(self):
+        return wrapUnoContainer(self.doc.Bookmarks,
+                                "XNameAccess")

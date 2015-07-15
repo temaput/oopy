@@ -37,6 +37,7 @@ _EAT = lambda char: \
 
 
 class VenturaPrepare:
+
     """
     several routines to prepare odt for Ventura markup
     """
@@ -107,9 +108,7 @@ class VenturaPrepare:
         good (index number like {111}
         """
         iu = writer.IndexUtilities2(self.doc)
-        for im in iu.getMarks():
-            at = im.AlternativeText
-            im.AlternativeText = at.translate(str.maketrans("<>", "{}"))
+        iu.convert_old_index_markers()
 
     def prepare_for_ventura(self):
         # self.convert_index_markers()  # temporarily
@@ -126,3 +125,67 @@ class VenturaPrepare:
 
     def __call__(self):
         self.prepare_for_ventura()
+
+
+class BibliographyReorder:
+    """
+    Looks for bibliography markers aka [111]
+    Finds appropriate records in bibliography list
+    Inserts fields
+    """
+    BookmarkName = "bibliography"
+    RecordPattern = r"(\d*)\.(.+)$"
+    MarkerSearchPattern = r"\[(\d+)\]"
+
+    def __init__(self, doc):
+        self.doc = doc
+        self.bu = writer.BookmarkUtilities(self.doc)
+        self.cu = writer.CursorUtilities(self.doc)
+
+    def get_bibliography_range(self):
+        bookmarks = self.bu.getBookmarksDict()
+        return bookmarks[self.BookmarkName].getAnchor()
+
+    def make_biblist(self):
+        import re
+        pattern = re.compile(self.RecordPattern)
+        bibliography = self.get_bibliography_range()
+        biblist = []
+        for p in self.cu.iterateParagraphs(bibliography):
+            m = pattern.search(p.String)
+            if m is not None:
+                try:
+                    num, rec = m.group(1, 2)
+                except IndexError:
+                    continue
+                biblist.append((rec, num))
+        return biblist
+
+    def do_reorder(self):
+
+        newbiblist = enumerate(sorted(self.make_biblist()))
+
+        # delete old bibliography
+        bibcursor = self.get_bibliography_range()
+        bibcursor.String = ""
+
+        # change color for every [123] marker in text
+        from macrohelper import colors
+        fu = writer.FindReplaceUtilities(self.doc)
+        fu.SearchRegularExpression = True
+        fu.setReplaceAttributes(dict(CharColor=colors.red))
+        fu(self.MarkerSearchPattern, "$0")
+
+        # when replacing numbers change color back to default
+        fu.setSearchAttributes(dict(CharColor=colors.red))
+        fu.setReplaceAttributes(dict(CharColor=-1))
+
+        tu = writer.TextUtilities(self.doc)
+        for num, rectuple in newbiblist:
+            rectitle, recnum = rectuple
+            # replace markers
+            fu(r"\[%s\]" % recnum, "[%s]" % num)
+            # print bibl record
+            bibcursor = tu.insertParagraph(bibcursor, "%s.\t%s" % (
+                num, rectitle))
+            bibcursor.collapseToEnd()

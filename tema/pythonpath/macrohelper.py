@@ -13,7 +13,7 @@ log = logging.getLogger("pyuno.macrohelper")
 # fh.setFormatter(formatter)
 # log.addHandler(logging.NullHandler())
 
-log.debug("logging from macrohelper works! __name__ = %s", __name__)
+# log.debug("logging from macrohelper works! __name__ = %s", __name__)
 
 import uno
 
@@ -23,7 +23,14 @@ import dialogapi
 from utils import Bunch
 
 colors = Bunch(
-    yellow=0x00FFFF00,
+    red=0xFF0000,
+    green=0x00FF00,
+    blue=0x0000FF,
+    black=0x000000,
+    white=0xFFFFFF,
+    yellow=0xFFFF00,
+    magenta=0xFF00FF,
+    cyan=0x00FFFF,
 )
 
 chars = Bunch(
@@ -37,21 +44,29 @@ chars = Bunch(
     mdash_code=r"\u2014",
 )
 
+newdocURLs = dict(
+    calc="private:factory/scalc",
+    writer="private:factory/swriter"
+)
+
 
 class InputBox(dialogapi.unoDialog):
 
     def setProperties(self, **kwargs):
         properties = dict(
-                Name = 'InputBox'
-                )
+            Name='InputBox'
+        )
         properties.update(kwargs)
         return properties
 
     def construct(self, **kwargs):
         self.labelControl = self.insertLabel(kwargs.get('message', ''),
-                PositionX = 5, PositionY = 5, Width = 100, Height = 8)
-        self.btnOK = self.insertButton('OK', 'OK', PositionX=100, PositionY=100,
-                Height=14, Width=40, DefaultButton=True)
+                                             PositionX=5,
+                                             PositionY=5,
+                                             Width=100, Height=8)
+        self.btnOK = self.insertButton('OK', 'OK',
+                                       PositionX=100, PositionY=100,
+                                       Height=14, Width=40, DefaultButton=True)
 
 
 class StarBasicGlobals:
@@ -65,8 +80,10 @@ class StarBasicGlobals:
             self.StarDesktop = c.getDesktop()
             self.GetDefaultContext = c.getComponentContext
             self.ThisComponent = c.getDocument()
-        elif hasattr(c, 'ServiceManager'):  # context is StarOffice.ComponentContext
-            self.StarDesktop = c.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", c)
+        elif hasattr(c, 'ServiceManager'):
+            # context is StarOffice.ComponentContext
+            self.StarDesktop = c.ServiceManager.createInstanceWithContext(
+                "com.sun.star.frame.Desktop", c)
             self.GetDefaultContext = lambda: c
             self.ThisComponent = self.StarDesktop.getCurrentComponent()
         assert self.StarDesktop, "bad context, init failed"
@@ -77,17 +94,18 @@ class StarBasicGlobals:
 
     def CreateUnoService(self, uri, *args):
         if len(args):
-            return self._smgr.createInstanceWithArgumentsAndContext(uri,
-                    args, self._ctx)
+            return self._smgr.createInstanceWithArgumentsAndContext(
+                uri, args, self._ctx)
         return self._smgr.createInstanceWithContext(uri, self._ctx)
+
     def CreateUnoStruct(self, uri, *args):
         return uno.createUnoStruct(uri, *args)
 
     def CreateUnoDialog(self, uri):
         dp = self._smgr.createInstanceWithContext(
-                "com.sun.star.DialogProvider", self._ctx)
+            "com.sun.star.DialogProvider", self._ctx)
         return dp.createDialog(
-                "vnd.sun.star.script:{uri}?location=user".format(uri=uri))
+            "vnd.sun.star.script:{uri}?location=user".format(uri=uri))
 
     def InputBox(self, message, title="Input"):
         """ Create simple imput dialog programaticaly"""
@@ -100,8 +118,8 @@ class StarBasicGlobals:
         parent = self.StarDesktop.getCurrentFrame().getContainerWindow()
         toolkit = parent.getToolkit()
         older_imple = self._check_method_parameter(
-                "com.sun.star.awt.XMessageBoxFactory", "createMessageBox",
-                1, "com.sun.star.awt.Rectangle")
+            "com.sun.star.awt.XMessageBoxFactory", "createMessageBox",
+            1, "com.sun.star.awt.Rectangle")
         if older_imple:
             from com.sun.star.awt import Rectangle
             msgbox = toolkit.createMessageBox(
@@ -119,8 +137,18 @@ class StarBasicGlobals:
         msgbox.dispose()
         return n
 
-    def _check_method_parameter(self, interface_name, method_name, param_index, param_type):
-        """ Check the method has specific type parameter at the specific position. """
+    def macro_create_doc(self, doctype):
+        if doctype not in newdocURLs:
+            return None
+
+        return self.StarDesktop.loadComponentFromURL(
+            newdocURLs[doctype], "_blank", 0, ())
+
+    def _check_method_parameter(self,
+                                interface_name,
+                                method_name, param_index, param_type):
+        """ Check the method
+        has specific type parameter at the specific position. """
         cr = self.CreateUnoService("com.sun.star.reflection.CoreReflection")
         try:
             idl = cr.forName(interface_name)
@@ -142,3 +170,5 @@ def measure_func(fn, *args, **kwargs):
     end_cpu = time.clock()
     return {'real_seconds': end_time - start_time,
             'cpu_seconds': end_cpu - start_cpu}
+
+__all__ = (StarBasicGlobals, measure_func)

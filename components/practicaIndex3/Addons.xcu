@@ -57,6 +57,36 @@
                     </node>
                     <node oor:name="m4" oor:op="replace">
                         <prop oor:name="URL" oor:type="xs:string">
+                            <value>org.openoffice.comp.pyuno.practica.Index:RebuildMarkPresentationFields</value>
+                        </prop>
+                        <prop oor:name="ImageIdentifier" oor:type="xs:string">
+                            <value/>
+                        </prop>
+                        <prop oor:name="Title" oor:type="xs:string">
+                            <value/>
+                            <value xml:lang="en-US">Rebuild presentation fields</value>
+                        </prop>
+                        <prop oor:name="Target" oor:type="xs:string">
+                            <value>_self</value>
+                        </prop>
+                    </node>
+                    <node oor:name="m5" oor:op="replace">
+                        <prop oor:name="URL" oor:type="xs:string">
+                            <value>org.openoffice.comp.pyuno.practica.Index:ConvertOldMarkers</value>
+                        </prop>
+                        <prop oor:name="ImageIdentifier" oor:type="xs:string">
+                            <value/>
+                        </prop>
+                        <prop oor:name="Title" oor:type="xs:string">
+                            <value/>
+                            <value xml:lang="en-US">Convert old markers</value>
+                        </prop>
+                        <prop oor:name="Target" oor:type="xs:string">
+                            <value>_self</value>
+                        </prop>
+                    </node>
+                    <node oor:name="m6" oor:op="replace">
+                        <prop oor:name="URL" oor:type="xs:string">
                             <value>org.openoffice.comp.pyuno.practica.Index:CountIndexMarks</value>
                         </prop>
                         <prop oor:name="ImageIdentifier" oor:type="xs:string">

@@ -32,9 +32,8 @@ from com.sun.star.text.ControlCharacter import (  # noqa
 
 def prepare_for_ventura():
     set_globals()
-    ctx = basic.GetDefaultContext()
     from practica import VenturaPrepare
-    VenturaPrepare(doc, ctx)()
+    VenturaPrepare(basic)()
 
 
 def convert_index_markers():
@@ -57,6 +56,40 @@ def freq_report():
     sourcedoc = basic.macro_create_doc("writer")
     freq_report(basic.ThisComponent, sourcedoc)
     basic.MsgBox("Done!")
+
+
+def print_index_from_doc():
+    """
+    Prints index from editor doc
+    """
+    import writer
+    iu = writer.IndexUtilities2(doc)
+    target = basic.macro_create_doc("writer")
+    iu.printIndex(target)
+
+
+def print_index_from_layout():
+    """
+    Print index from exported index from layout
+    """
+    from indexmaker import IndexMaker
+    target = basic.macro_create_doc("writer")
+    IndexMaker(doc, target)()
+
+
+def expand_table():
+
+    from practica import expand_table, VenturaPrepare
+    vp = VenturaPrepare(basic)
+    vp.symbol_substitute()
+    expand_table(basic, ",")
+
+
+def reorder_bibliography():
+
+    from practica import BibliographyReorder
+    br = BibliographyReorder(doc)
+    br.do_reorder()
 
 __all__ = (prepare_for_ventura,
            convert_index_markers,

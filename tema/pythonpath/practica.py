@@ -62,11 +62,13 @@ class VenturaPrepare:
     SymbolFontName = "Symbol"
     VenturaEncoding = "cp1251"
 
-    def __init__(self, doc, ctx):
-        self.h = hyphenate.Hyphenate(doc, ctx)
+    def __init__(self, basic):
+        self.h = hyphenate.Hyphenate(basic.ThisComponent,
+                                     basic.GetDefaultContext())
+
+        self.doc = basic.ThisComponent
         self.h.HyphMinWordLength = 4
-        self.fru = writer.FindReplaceUtilities(doc)
-        self.doc = doc
+        self.fru = writer.FindReplaceUtilities(self.doc)
 
     @staticmethod
     def make_subst(subst_tuple, char):
@@ -128,14 +130,15 @@ class VenturaPrepare:
 
 
 class BibliographyReorder:
+
     """
     Looks for bibliography markers aka [111]
     Finds appropriate records in bibliography list
     Inserts fields
     """
     BookmarkName = "bibliography"
-    RecordPattern = r"(\d*)\.(.+)$"
-    MarkerSearchPattern = r"\[(\d+)\]"
+    RecordPattern = r"(\d*)\.\s(.+)$"
+    MarkerSearchPattern = r"\[(\d+,?\s?)+\]"
 
     def __init__(self, doc):
         self.doc = doc
@@ -163,7 +166,7 @@ class BibliographyReorder:
 
     def do_reorder(self):
 
-        newbiblist = enumerate(sorted(self.make_biblist()))
+        newbiblist = enumerate(sorted(self.make_biblist()), 1)
 
         # delete old bibliography
         bibcursor = self.get_bibliography_range()
@@ -184,8 +187,54 @@ class BibliographyReorder:
         for num, rectuple in newbiblist:
             rectitle, recnum = rectuple
             # replace markers
-            fu(r"\[%s\]" % recnum, "[%s]" % num)
+            fu(r"([\[\s])%s([,\]])" % recnum, "$1%s$2" % num)
             # print bibl record
             bibcursor = tu.insertParagraph(bibcursor, "%s.\t%s" % (
                 num, rectitle))
             bibcursor.collapseToEnd()
+
+
+def expand_table(basic, divider):
+    """
+    Converts pattern like @B ... $A plus table to list of rows compiled like
+    for every word (splitted) by divider in column B in every row print
+    B-word ... A-column
+    @ - means expand
+    $ - means substitude
+    Was used for making drug list from Sanford
+    """
+
+    import re
+
+    def print_string(pos=0, buf=''):
+        if pos == len(parts):
+            tu.appendPara(buf)
+        else:
+            if '@' in parts[pos] or '$' in parts[pos]:
+                cell_contents = tbl.getCellByName(
+                    "%s%s" % (parts[pos][-1], rownum)).String
+
+                if '@' in parts[pos]:
+                    _buf = buf
+                    for sbst in cell_contents.split(divider):
+                        buf = "%s %s" % (_buf, sbst)
+                        print_string(pos + 1, buf)
+
+                else:  # '$' in parts[pos]:
+                    buf += cell_contents
+                    print_string(pos+1, buf)
+            else:
+                buf += parts[pos]
+                print_string(pos+1, buf)
+
+    cu = writer.CursorUtilities(basic.ThisComponent)
+
+    cur = cu.createTextCursorByANYRage(cu.getCurrentPosition())
+    if cu.isInsideCell():
+        output = basic.macro_create_doc("writer")
+        tu = writer.TextUtilities(output)
+        tbl = cur.TextTable
+        pattern = tbl.getCellByPosition(0, 0).String.strip()
+        parts = re.split("([$@][A-Z])", pattern)
+        for rownum in range(2, tbl.Rows.Count + 1):
+            print_string()

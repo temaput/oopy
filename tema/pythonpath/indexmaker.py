@@ -197,8 +197,8 @@ class IndexMaker:
     def printTree(self, indexTree, level=0):
         for bname in sorted(indexTree):
             branch = indexTree[bname]
-            print ("%s%s%s  %s" % (level, level * "\t", bname,
-                                   print_page_set(branch.pageSet)))
+            print("%s%s%s  %s" % (level, level * "\t", bname,
+                                  print_page_set(branch.pageSet)))
             if len(branch.subLevelsDct):
                 self.printTree(branch.subLevelsDct, level + 1)
 
@@ -211,6 +211,9 @@ class IndexMaker:
             newPara.collapseToEnd()
             if len(branch.subLevelsDct):
                 self.printTreeToDoc(newPara, branch.subLevelsDct, level + 1)
+
+    def __call__(self, source=None, target=None):
+        self.makeIndex(source, target)
 
     def makeIndex(self, source=None, target=None):
         source = source or self.doc

@@ -144,6 +144,12 @@ class PracticaIndex(DialogAccessComponentHelper,
     def ToggleMarkPresentationsDispatch(self):
         self.iu.toggleMarks()
 
+    def RebuildMarkPresentationFields(self):
+        self.iu.rebuildPresentationFields()
+
+    def ConvertOldMarkers(self):
+        self.iu.convert_old_index_markers()
+
     def CountIndexMarks(self):
         di = self.doc.createInstance("com.sun.star.text.DocumentIndex")
         marks = di.DocumentIndexMarks

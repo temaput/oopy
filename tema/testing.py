@@ -43,6 +43,39 @@ appendText = lambda t: doc.Text.insertString(
     False)
 
 
+def rebuild_cache():
+    import writer
+    iu = writer.IndexUtilities2(doc)
+    iu.rebuildCache(doc)
+
+def show_last_num():
+    import writer
+    iu = writer.IndexUtilities2(doc)
+    iu.rebuildCache(doc)
+    basic.MsgBox("LastMarkNum = %s" % iu.LastMarkNum)
+
+def renumber_markers():
+    import writer
+    iu = writer.IndexUtilities2(doc)
+    iu.rebuildCache(doc)
+    cu = writer.CursorUtilities(doc)
+
+    currentNumber =  BADNUMBER = 2547
+
+    for m in iu.getMarks():
+        mnumber = iu.getMarkNumber(m)
+        if mnumber == BADNUMBER:
+            cur = cu.createTextCursorByANYRage(m.Anchor)
+            mkeys = iu.getMarkKeys(m)
+            mkeys["AlternativeText"] = iu.stripMarkNumber(
+                mkeys["AlternativeText"]) + "{%s}" % str(currentNumber)
+
+            newmark = iu.createMark(mkeys)
+            iu.insertMark(newmark, cur, False)
+            m.dispose()
+            currentNumber += 1
+    iu.rebuildPresentationFields()
+
 def appendPara(t):
     appendText(t)
     doc.Text.insertControlCharacter(doc.Text.getEnd(), PARAGRAPH_BREAK, False)

@@ -100,10 +100,12 @@ class Properties:
         return tuple(propList)
 
     @staticmethod
-    def dctFromProperties(obj):
+    def dctFromProperties(obj, property_names=()):
         PropertySetInfo = obj.getPropertySetInfo()
         dct = {}
         for p in PropertySetInfo.Properties:
+            if property_names and p.Name not in property_names:
+                continue
             dct[p.Name] = obj.getPropertyValue(p.Name)
         return dct
 
@@ -309,7 +311,7 @@ class IndexUtilities(BaseUtilities):
             self.addMarkToCache(mark, lastMarkNum)
             self.addMarkKeysToCache(markProperties)
             log.debug("cache updated")
-            self.LastMarkNum += 1
+            self.incrementLastMarkNum()
             log.debug("cache updated, LMN=%s", self.LastMarkNum)
         else:
             # more than one paragraph selected
@@ -327,8 +329,12 @@ class IndexUtilities(BaseUtilities):
             self.insertMark(mark2, selEdges[1], False)
             self.addMarkToCache(mark1, lastMarkNum)
             self.addMarkToCache(mark2, lastMarkNum + 1)
-            self.LastMarkNum += 2
+            self.incrementLastMarkNum(2)
         self.doc.TextFields.refresh()
+
+    @classmethod
+    def incrementLastMarkNum(cls, val=1):
+        cls.LastMarkNum += val
 
     @staticmethod
     def stripMarkNumber(keyString):
@@ -340,6 +346,10 @@ class IndexUtilities(BaseUtilities):
             if sep in keyString:
                 sepPosition = min(sepPosition, keyString.find(sep))
         return keyString[:sepPosition]
+
+    @classmethod
+    def removeMarkFromCache(cls, key):
+        cls.MarkCacheDict[key] = None
 
     @classmethod
     def addMarkToCache(cls, mark, markNumber):
@@ -417,6 +427,9 @@ class IndexUtilities(BaseUtilities):
                             for m in self.getLinkedMarks(mark):
                                 marksRemoved += 1
                                 m.dispose()
+                            self.removeMarkFromCache(markNumber)
+                            if marksRemoved > 1:
+                                self.removeMarkFromCache(markNumber + 1)
                     # remove presentation aswell
                     textField.dispose()
         return marksRemoved
@@ -453,17 +466,17 @@ class IndexUtilities(BaseUtilities):
                     return tf
 
     def getMarkKeys(self, mark):
-        return self.keysToList(Properties.dctFromProperties(mark))
+        return Properties.dctFromProperties(mark, self.MarkKeyNames)
 
     def getMarkNumber(self, mark):
-        return self.readMarkNumber(self.getMarkKeys(mark))
+        return self.readMarkNumber(self.keysToList(self.getMarkKeys(mark)))
 
     def getLinkedMarks(self, mark):
         """
         Inspects if it is a diapason marker
         returns tuple with mark and its opposite (if exist)
         """
-        markKeysList = self.getMarkKeys(mark)
+        markKeysList = self.keysToList(self.getMarkKeys(mark))
         markString = markKeysList[-1]  # we only check the last element
         if '=' in markString or '+' in markString:
             markNumber = self.readMarkNumber(markKeysList)

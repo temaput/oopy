@@ -43,12 +43,15 @@ class VenturaPrepare:
     """
 
     PATTERNS = (
-        (chars.soft_hyphen_code, r"<->"),  # SOFT_HYPHEN
-        (r"(\d)\s(\d)", r"$1<I>$2"),  # DIGITAL_SPACE
+        (r">", r">>"),  # angle brackets (less/greater then)
+        (r"<", r"<<"),  # angle brackets (less/greater then)
+        (r"(\d)\s(\d)", r"$1<|>$2"),  # DIGITAL_SPACE
         (chars.nonbreaking_space_code, r"<N>"),  # nonbreaking space
         # <space><emdash><space>
         (r"\s%s\s" % chars.mdash_code, "<N>%s " % chars.mdash),
         (r"\s%s\s" % chars.ndash_code, "<N>%s " % chars.ndash),
+        (chars.soft_hyphen_code, r"<->"),  # SOFT_HYPHEN
+
     )
 
     SYMBOL_SUBST = (

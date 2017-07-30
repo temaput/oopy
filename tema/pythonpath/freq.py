@@ -22,31 +22,14 @@ OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-def process_word(word):
-    punctuation = "!?,.;:)}]"
-    starting_brackets = "({["
-    remove_punctuation = "".maketrans("", "", punctuation)
-    remove_starting_brackets = "".maketrans("", "", starting_brackets)
-
-    if len(word) >= 4:
-        word_tuple = (word[0], word[1:-2], word[-2:])
-    elif len(word) == 3:
-        word_tuple = (word[0], word[1:-1], word[-1])
-    else:
-        return word.translate(remove_punctuation)
-
-    word_tuple = (
-        word_tuple[0].translate(remove_starting_brackets),
-        word_tuple[1],
-        word_tuple[2].translate(remove_punctuation)
-    )
-    return "".join(word_tuple)
+import re
 
 
 def freq_report(sourcedoc, targetdoc=None):
     """
     parses writer doc and reports the frequency of words using
     """
+    pattern = re.compile(r"^\W|\W$|^[\d\W]+$")
     if targetdoc is None:
         targetdoc = sourcedoc
     stat_dict = {}
@@ -55,8 +38,9 @@ def freq_report(sourcedoc, targetdoc=None):
     for p in cu.iterateParagraphs():
         s = p.String
         for word in s.split():
-            word = process_word(word.lower())
-            stat_dict[word] = stat_dict.setdefault(word, 0) + 1
+            word = pattern.sub("", pattern.sub("", word.lower()))
+            if len(word):
+                stat_dict[word] = stat_dict.setdefault(word, 0) + 1
 
     stat_list = [(stat_dict[key], key) for key in stat_dict]
     stat_list.sort(key=lambda t: (-t[0], t[1]))

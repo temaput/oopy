@@ -1,6 +1,8 @@
 import logging
+from urllib import parse
+from os import path
 log = logging.getLogger("pyuno")
-log.addHandler(logging.NullHandler())
+# log.addHandler(logging.NullHandler())
 
 
 import macrohelper
@@ -19,6 +21,12 @@ def set_globals(ctx=None):
         ctx = XSCRIPTCONTEXT  # noqa
     basic = macrohelper.StarBasicGlobals(ctx)
     doc = basic.ThisComponent
+    url = doc.getURL()
+    file_path = parse.unquote(url)[6:]
+    logging_dir = path.dirname(file_path)
+    logging_file = path.join(logging_dir, "macros.log")
+    logging.basicConfig(filename=logging_file, level=logging.DEBUG)
+    logging.info('Started macro...')
 
 
 from com.sun.star.text.ControlCharacter import (  # noqa
@@ -44,8 +52,9 @@ def convert_index_markers():
     set_globals()
     ctx = basic.GetDefaultContext()
     from practica import VenturaPrepare
-    vp = VenturaPrepare(doc, ctx)
+    vp = VenturaPrepare(basic, doc)
     vp.convert_index_markers()
+    basic.MsgBox("Done!")
 
 
 def freq_report():
@@ -62,19 +71,25 @@ def print_index_from_doc():
     """
     Prints index from editor doc
     """
+    set_globals()
     import writer
+    log.info("running macros print_index_from_doc")
     iu = writer.IndexUtilities2(doc)
     target = basic.macro_create_doc("writer")
     iu.printIndex(target)
+    log.info("finished macros print_index_from_doc")
+    basic.MsgBox("Done!")
 
 
 def print_index_from_layout():
     """
     Print index from exported index from layout
     """
+    set_globals()
     from indexmaker import IndexMaker
     target = basic.macro_create_doc("writer")
     IndexMaker(doc, target)()
+    basic.MsgBox("Done!")
 
 
 def expand_table():
@@ -83,13 +98,16 @@ def expand_table():
     vp = VenturaPrepare(basic)
     vp.symbol_substitute()
     expand_table(basic, ",")
+    basic.MsgBox("Done!")
 
 
 def reorder_bibliography():
 
+    set_globals()
     from practica import BibliographyReorder
     br = BibliographyReorder(doc)
     br.do_reorder()
+    basic.MsgBox("Done!")
 
 __all__ = (prepare_for_ventura,
            convert_index_markers,

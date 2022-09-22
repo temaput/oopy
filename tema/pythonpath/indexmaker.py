@@ -47,7 +47,7 @@ context = dict(
 template = (
     r"^(?P<entry1>{entry}):?"
     r"(?P<entry2>{entry})?:?"
-    r"(?P<entry3>{entry})?{diapasonMarker}?{counter}\t{page}"
+    r"(?P<entry3>{entry})?{diapasonMarker}?{counter}{page}"
 )
 
 r = compile(template.format(**context))

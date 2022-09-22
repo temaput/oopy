@@ -65,11 +65,11 @@ class VenturaPrepare:
     SymbolFontName = "Symbol"
     VenturaEncoding = "cp1251"
 
-    def __init__(self, basic):
-        self.h = hyphenate.Hyphenate(basic.ThisComponent,
+    def __init__(self, basic, doc=None):
+        self.doc = doc or basic.ThisComponent
+        self.h = hyphenate.Hyphenate(self.doc,
                                      basic.GetDefaultContext())
 
-        self.doc = basic.ThisComponent
         self.h.HyphMinWordLength = 4
         self.fru = writer.FindReplaceUtilities(self.doc)
 

@@ -286,10 +286,16 @@ class IndexUtilities(BaseUtilities):
         sio = StringIO()
         presentationMask = "%s"
         vcur = self.Cursor.getViewCursor()
-        for im in self.getMarks():
+        log.info("Printing index from document")
+        marks = self.getMarks()
+        log.debug("Marks len found: %s", len(marks))
+        for im in marks:
+            # log.debug(im)
             imtext = self.makeMarkPresentation(im, presentationMask)
+            log.debug("imtext: %s", imtext)
             vcur.gotoRange(im.Anchor, False)
             page = vcur.Page
+            log.debug("index: %s\t%s",  (imtext, page))
             print("%s\t%s" % (imtext, page), file=sio)
         sio.seek(0)
         im = IndexMaker()
